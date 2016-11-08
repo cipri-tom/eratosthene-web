@@ -6,15 +6,24 @@
 
     <title>Eratosthene Prototype Web client</title>
     <script type="text/javascript" src="./include/util.js"></script>
+    <script type="text/javascript" src="./include/webutil.js"></script>
     <script type="text/javascript" src="./include/three.min.js"></script>
 
-    <script type="text/javascript" src="./include/my_socket.js"></script>
+    <script type="text/javascript" src="./include/websock.js"></script>
     <script type="text/javascript" src="./test.js"></script>
+    <script type="text/javascript" src="./address.js"></script>
     <script type="text/javascript" src="./client.js"></script>
 </head>
 <body>
     <canvas></canvas>
-    <input type="text" id="address" value="/950486422/1220011/4" autofocus>
-    <input type="button" value="Query" onclick="query(getElementById('address').value)">
+    <br/>
+    <input type="text" id="address1" value="/950486422/1220011/1" autofocus>
+    <input type="button" value="Query" onclick="query(getElementById('address1').value)">
+    <br/>
+    <input type="text" id="address2" value="/950486422/1220011/8">
+    <input type="button" value="Query" onclick="query(getElementById('address2').value)">
+    <br/>
+    <input type="text" id="address3" value="/950486422/1220100/8">
+    <input type="button" value="Query" onclick="query(getElementById('address3').value)">
 </body>
 </html>

@@ -2,82 +2,127 @@
 "use strict";
 
 // constants
-var LE_NETWORK_SB_ADDR = 88; // default length of address buffer
 var HOST = "ws://127.0.0.1:43420"
 
+var CELL_DATA_SIZE = 3 * 1;    // RGB 1-byte colour
+var CELL_POSE_SIZE = 3 * 8;    // longitude, latitude, altitude as double precision
+var CELL_SIZE = CELL_DATA_SIZE + CELL_POSE_SIZE;
+
+WebUtil.init_logging();
+
 function num2bytes(num) {
-    let bytes = [];
-    for (let i = 0; i < 8; ++i) {
+    var bytes = [];
+    for (var i = 0; i < 8; ++i) {
         bytes[i] = num & 0xFF;
         num = num >> 8;
     }
     return bytes;
 }
 
-function Address(addrStr) {
+function spherical_to_cartesian(pose) {
+    /** Modifies IN PLACE!
+        Input: [lon, lat, rad] --- Output: [x, y, z] */
+    pose[2] = Math.cos(pose[1]) * Math.cos(pose[0]);
+    pose[0] = Math.cos(pose[1]) * Math.sin(pose[0]);
+    pose[1] = Math.sin(pose[1]);
+    return pose;  // not really needed
+}
+
+
+function Cell(addrStr) {
     // keep reference to itself to be accessed from private functions
     var self = this;
 
     // fields
-    self.time = self.depth = self.size = 0;
-    self.digits = [];
-    let socket = null;
-    let num_messages = 0;
-    let data = [];
+    var socket = null, num_messages = 0;  // for the network interface
 
+    self.addr = new Address(addrStr);
+    self.size = 0, self.poses = [], self.data = [];  // the points and their colour
+    self.edge = null;
 
-    // construct from string
-    if (addrStr) {
-        let parts = addrStr.split('/');
-        if (parts.length != 4 || parts[0] || !parts[1] || !parts[2] || !parts[3])
-            throw("Invalid address");
-
-        self.time = parseInt(parts[1]);
-        self.size = parts[2].length;
-        for (let i = 0; i < self.size; ++i)
-            self.digits.push(parts[2][i]);
-        self.depth = parseInt(parts[3]);
-    }
-
-    function toBytes() {
-        let bytes = [];
-        bytes = bytes.concat(num2bytes(self.size));
-        bytes = bytes.concat(num2bytes(self.time));
-        bytes = bytes.concat(num2bytes(self.depth));
-        bytes = bytes.concat(self.digits);
-        for (let i = bytes.length; i < LE_NETWORK_SB_ADDR; ++i)
-            bytes[i] = 0;
-        return bytes;
-    }
-
-    function auth_and_send(message_buf) {
+    function auth_and_send() {
         /* Callback for the first message on the socket.
          * Checks it is correctly authenticating the socket
          * Should not be called directly! Pairs with `connect`
          */
-        console.log("Receiving auth");
-        // let r = new Int32Array(message_buf);  // 4 bytes
-        let r = new DataView(message_buf).getInt32(0, true);  // 4 bytes, littleEndian
+        Util.Info(`Receiving auth: ${socket.rQlen()} bytes`);
+        var r = socket.rQshift32();  // 4 bytes, littleEndian
         if ((r & 0x7F) === 2) {
             // auth succeeded, now we're ready to receive messages:
             socket.on('message', receive);
-            socket.send(toBytes());
+            console.time("networking");
+            socket.send(self.addr.to_bytes());
         }
         else
             throw "Failed to authenticate socket";
     }
 
-    function receive(message_buf) {
+    function receive() {
+        /** Called for received messages after a query was sent.
+            Since the data we need may arrive in multiple messages, we postpone
+            the reconstruction 'till the end.
+
+            Performance: consider bypassing websock and storing the buffers
+            themselves then reconstructing with a (Blob + FileReader) at the end
+         */
         num_messages++;
-        let message = new Float64Array(message_buf);
-        for (let i = 0; i < message.length; ++i)
-            data.push(message);
     }
 
-    function close_conn() {
-        socket = null;
-        console.log("received messages: " + num_messages);
-        console.log(data);
+    function close_and_read() {
+        console.timeEnd("networking");
+        console.time("constructing");
+        Util.Info(`received ${socket.rQlen()} bytes in ${num_messages} messages`);
+
+        self.edge = self.addr.get_pose();
+        spherical_to_cartesian(self.edge);
+
+        var received_bytes = socket.get_rQ(),
+            start = socket.get_rQi();
+        var dv = new DataView(new Uint8Array(received_bytes).buffer, start);
+        var num_points, offset = 0, pose_offset = 0, data_offset = 0;
+        var pose = [0.0, 0.0, 0.0];  // prealocate; either [lon, lat, rad] or [x, y, z]
+        var data = [0,0,0];          // prealocate
+
+        if (dv.byteLength % CELL_SIZE !== 0)
+            Util.Warn("WARNING: there are leftover bytes in transmission");
+        num_points = Math.floor(dv.byteLength / CELL_SIZE);
+
+        for (var curr_pt = 0; curr_pt < num_points; curr_pt++) {
+            // offsets are updated after each extraction
+            // check if they are correct; since it should never be hit, this should be fast
+            if (         offset !== curr_pt * CELL_SIZE
+                 || pose_offset !== curr_pt * 3
+                 || data_offset !== curr_pt * 3)
+                throw "Mis-aligned reading detected";
+
+            pose[0] = dv.getFloat64(offset     , true);  // true == little endian
+            pose[1] = dv.getFloat64(offset + 8 , true);
+            pose[2] = dv.getFloat64(offset + 16, true);
+            offset += CELL_POSE_SIZE;
+
+            // convert and translate relative to edge
+            spherical_to_cartesian(pose);
+            pose[0] = EARTH_ALTITUDE * (pose[0] - self.edge[0]);
+            pose[1] = EARTH_ALTITUDE * (pose[1] - self.edge[1]);
+            pose[2] = EARTH_ALTITUDE * (pose[2] - self.edge[2]);
+
+            // push in the cell's data
+            self.poses[pose_offset    ] = pose[0];
+            self.poses[pose_offset + 1] = pose[1];
+            self.poses[pose_offset + 2] = pose[2];
+            pose_offset += 3;  // number of extracted values
+
+            // extract data -- consider parsing in a separate loop over Uint8Array
+            self.data[data_offset    ] = dv.getUint8(offset);
+            self.data[data_offset + 1] = dv.getUint8(offset + 1);
+            self.data[data_offset + 2] = dv.getUint8(offset + 2);
+            offset += CELL_DATA_SIZE;
+            data_offset += 3;
+        }
+
+        console.timeEnd("constructing");
+        socket = null;   // dispose
+        // console.log(self);
     }
 
 
@@ -86,13 +131,13 @@ function Address(addrStr) {
         if (socket === null) {
             socket = new Websock();
             socket.on('open', function sendAuth() {
-                console.log("Sending auth");
+                Util.Info("Sending auth");
                 socket.send([2, 0, 0, 0]);
             });
 
             // first message is processed to check authentication
             socket.on("message", auth_and_send);
-            socket.on("close"  , close_conn);
+            socket.on("close"  , close_and_read);
 
             socket.open(HOST, 'binary');
         }
@@ -108,14 +153,9 @@ function Address(addrStr) {
 }
 
 
-// conn.open("ws://127.0.0.1:43427", "binary");
-// let addr = new Address("/950486422/122010001340232/1");
-
-// setTimeout(conn.send, 2000, addr.toBytes());
-
 function query(addr_str) {
-    let addr = new Address(addr_str);
-    addr.query();
+    var cell = new Cell(addr_str);
+    cell.query();
 }
 
 // conn.close();

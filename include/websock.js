@@ -55,7 +55,7 @@ var api = {},         // Public API
     mode = 'base64',  // Current WebSocket mode: 'binary', 'base64'
     rQ = [],          // Receive queue
     rQi = 0,          // Receive queue index
-    rQmax = 10000,    // Max receive queue size before compacting
+    rQmax = 1048576, // Max receive queue size before compacting -- 1 Mb
     sQ = [],          // Send queue
 
     eventHandlers = {
@@ -172,8 +172,9 @@ function decode_message(data) {
     if (mode === 'binary') {
         // push arraybuffer values onto the end
         var u8 = new Uint8Array(data);
+        var curr_len = rQ.length;
         for (var i = 0; i < u8.length; i++) {
-            rQ.push(u8[i]);
+            rQ[curr_len + i] = u8[i];
         }
     } else {
         // base64 decode and concat to the end
@@ -208,7 +209,7 @@ function flush() {
 
 // overridable for testing
 function send(arr) {
-    Util.Debug(">> send_array: " + arr);
+    // Util.Debug(">> send_array: " + arr);
     sQ = sQ.concat(arr);
     return flush();
 }
@@ -223,35 +224,40 @@ function send_string(str) {
 // Other public functions
 
 function recv_message(e) {
-    Util.Debug(">> recv_message: " + e.data.byteLength + " bytes");
+    // Util.Debug(">> recv_message: " + e.data.byteLength + " bytes");
 
-    try {
+    if (rQ.length - rQi > api.maxReceivedAmount) {
+        Util.Debug("Socket buffer full, discarding extra messages");
+        return;
+    }
+
+    // try {
         decode_message(e.data);
         if (rQlen() > 0) {
             eventHandlers.message();
             // Compact the receive queue
-            if (rQ.length > rQmax) {
-                //Util.Debug("Compacting receive queue");
+            if (rQi > rQmax) {
+                Util.Debug("Compacting receive queue");
                 rQ = rQ.slice(rQi);
                 rQi = 0;
             }
         } else {
             Util.Debug("Ignoring empty message");
         }
-    } catch (exc) {
-        if (typeof exc.stack !== 'undefined') {
-            Util.Warn("recv_message, caught exception: " + exc.stack);
-        } else if (typeof exc.description !== 'undefined') {
-            Util.Warn("recv_message, caught exception: " + exc.description);
-        } else {
-            Util.Warn("recv_message, caught exception:" + exc);
-        }
-        if (typeof exc.name !== 'undefined') {
-            eventHandlers.error(exc.name + ": " + exc.message);
-        } else {
-            eventHandlers.error(exc);
-        }
-    }
+    // } catch (exc) {
+    //     if (typeof exc.stack !== 'undefined') {
+    //         Util.Warn("recv_message, caught exception: " + exc.stack);
+    //     } else if (typeof exc.description !== 'undefined') {
+    //         Util.Warn("recv_message, caught exception: " + exc.description);
+    //     } else {
+    //         Util.Warn("recv_message, caught exception:" + exc);
+    //     }
+    //     if (typeof exc.name !== 'undefined') {
+    //         eventHandlers.error(exc.name + ": " + exc.message);
+    //     } else {
+    //         eventHandlers.error(exc);
+    //     }
+    // }
     //Util.Debug("<< recv_message");
 }
 
@@ -387,6 +393,7 @@ function testMode(override_send, data_mode) {
 function constructor() {
     // Configuration settings
     api.maxBufferedAmount = 200;
+    api.maxReceivedAmount = 5 * 1024 * 1024; // 5 Mb -- anything extra is discarded
 
     // Direct access to send and receive queues
     api.get_sQ       = get_sQ;
