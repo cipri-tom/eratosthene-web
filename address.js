@@ -1,3 +1,4 @@
+"use strict";
 
 var LE_NETWORK_SB_ADDR = 88; // default length of address buffer
 
