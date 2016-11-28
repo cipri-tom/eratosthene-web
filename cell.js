@@ -102,9 +102,9 @@ function Cell(addrStr) {
 
             // convert and translate relative to edge
             spherical_to_cartesian(pose);
-            pose[0] = EARTH_ALTITUDE * (pose[0] - self.edge[0]);
-            pose[1] = EARTH_ALTITUDE * (pose[1] - self.edge[1]);
-            pose[2] = EARTH_ALTITUDE * (pose[2] - self.edge[2]);
+            pose[0] = EARTH_RADIUS * (pose[0]);// - self.edge[0]);
+            pose[1] = EARTH_RADIUS * (pose[1]);// - self.edge[1]);
+            pose[2] = EARTH_RADIUS * (pose[2]);// - self.edge[2]);
 
             // push in the cell's data
             positions[pose_offset    ] = pose[0];

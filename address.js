@@ -12,7 +12,7 @@ var LE_GEODESY_ASYA = 10;  // altitude (radial)
 var LE_GEODESY_WGS84_A = 6378137.0;
 var LE_GEODESY_WGS84_F = 298.257223563;
 
-var EARTH_ALTITUDE = LE_GEODESY_WGS84_A;
+var EARTH_RADIUS = LE_GEODESY_WGS84_A;
 
 /* ellispoidal coordinates boundaries */
 var LE_GEODESY_LMIN = - Math.PI;

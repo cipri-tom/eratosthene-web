@@ -6,61 +6,78 @@ var material_g;
 var cell_g;
 var camera_pos;
 
+function init_controls() {
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.rotateSpeed = 0.1;
+    controls.zoomSpeed = 0.1;
+    controls.panSpeed = 1.0;
+
+    controls.enableZoom = true;
+    controls.enablePan  = true;
+
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.3;
+    controls.addEventListener('change', render);
+}
+
+function init_gui() {
+    gui = new dat.GUI();
+    gui.add(controls, 'zoomSpeed'  , 0, 3);
+    gui.add(controls, 'rotateSpeed', 0, 3);
+    gui.add(controls, 'panSpeed'   , 0, 3);
+
+}
+
+function init_scene() {
+    // display origin
+    var origin_geom = new THREE.Geometry();
+    origin_geom.vertices.push(new THREE.Vector3(0,0,0));
+    origin_geom.colors.push(new THREE.Color(1,1,1));
+    var origin   = new THREE.Points( origin_geom, material_g );
+    scene.add( origin );
+
+    // display earth
+    var mat         = new THREE.LineBasicMaterial({color: 0x208820, linewidth: 2});
+    var earth       = new THREE.SphereBufferGeometry(EARTH_RADIUS, 24, 30);
+    var earth_edges = new THREE.EdgesGeometry(earth);
+    var wireframe   = new THREE.LineSegments(earth_edges, mat);
+    scene.add(wireframe);
+
+}
 
 function init(cell) {
     var c = document.getElementById('le_canvas');
     renderer = new THREE.WebGLRenderer({canvas: c});
     renderer.setSize(800, 640);
+    renderer.setClearColor( 0x0, 1);
+
     scene  = new THREE.Scene();
 
+    // init camera
     camera = new THREE.PerspectiveCamera(
                 75,             // Field of view
                 800 / 640,      // Aspect ratio
                 1,              // Near plane
                 1e8             // Far plane
     );
-    camera.position.set( 10, 10, 10 );
+    // camera.position.set( EARTH_RADIUS, EARTH_RADIUS, EARTH_RADIUS );
+    camera.position.set( 2111672,  4730978,  10963018 );
     camera.lookAt( scene.position );
-
     camera_pos = document.getElementById('camera_pos');
     camera_pos.textContent = camera.position.toArray().join('   ');
 
+    init_controls();
+    init_gui();
 
-    controls = new THREE.TrackballControls(camera, renderer.domElement);
-    controls.rotateSpeed = 1.0;
-    controls.zoomSpeed = 1.2;
-    controls.panSpeed = 1.0;
-
-    controls.noZoom = false;
-    controls.noPan  = false;
-
-    controls.staticMoving = true;
-    controls.dynamicDampingFactor = 0.3;
-    controls.keys = [65, 83, 68];
-    controls.addEventListener('change', render);
-
-    // var geometry = new  THREE.BoxGeometry( 200, 200, 200 );
-    // var material = new THREE.MeshBasicMaterial( { color: 0xff0000, wireframe: true } );
-
-    // var mesh = new THREE.Mesh( geometry, material );
-    // scene.add( mesh );
+    // init material
     material_g = new THREE.PointsMaterial({ // color: 0xFF0000,
                                             vertexColors : THREE.VertexColors,
                                             size: 5.0,
                                             sizeAttenuation: false
                                         });
 
+    init_scene();
 
-    var geometry = new THREE.Geometry();
-    geometry.vertices.push(new THREE.Vector3(0,0,0));
-    geometry.colors.push(new THREE.Color(1,1,1));
-    var origin   = new THREE.Points( geometry, material_g );
-    scene.add( origin );
-
-    gui = new dat.GUI();
-    gui.add(controls, 'zoomSpeed', 0, 3);
-
-    renderer.setClearColor( 0x0, 1);
     renderer.render( scene, camera );
     animate();
 }
