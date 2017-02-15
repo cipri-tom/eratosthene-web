@@ -38,7 +38,7 @@ function distance_threshold(altitude) {
     /** Returns threshold above which recursion stops */
     var normal = altitude / EARTH_RADIUS - 1;
     // threshold magic:
-    return (altitude * (1 - 0.75 * Math.exp(-2 * MATH.PI * normal * normal)));
+    return (altitude * (1 - 0.75 * Math.exp(-2 * Math.PI * normal * normal)));
 }
 
 function distance(pose_A, pose_B, in_cartesian) {
@@ -88,8 +88,8 @@ function fill_viewable(model, addr, idx, cell) {
         throw "Model doesn't have a pose";
     if (model.spatial_param == undefined)
         throw "Model doesn't define spatial indexation parameter";
-    if (model.new_addrs == undefined)
-        throw "Model doesn't have new cells array";
+    if (model.cells == undefined)
+        throw "Model doesn't store existing cells";
 
     // if we arrived from checking a daughter cell which has no data under it
     // then there is no need to further generate
@@ -103,6 +103,7 @@ function fill_viewable(model, addr, idx, cell) {
     var max_digit = addr.max_digit(idx);
     for (var digit = 0; digit <= max_digit; ++digit) { // CAN BE EQUAL!!
         addr.digits[idx] = digit;
+        addr.size = idx;
         if (idx > CONDITIONAL_RECURSION_IDX) {
             // only generate cells in the close vecinity:
             // TODO: shift to get distance to cell's center
@@ -114,9 +115,16 @@ function fill_viewable(model, addr, idx, cell) {
             if (Math.abs(depth_threshold(dist, model.spatial_param) - idx) < 1) {
                 // OK, has enough depth, add this cell
 
-                // TODO: add & check maximum number of new cells
+                // TODO: check maximum number of new cells
                 addr.depth = MODEL_DEPTH;
-                model.new_addrs.push(addr.clone());
+                if (model.cells[addr] == undefined) { // it's a new one
+                    // Add it to the model
+                    // TODO: memory consideration -- Cell is quite big as of now
+                    //          what if you store just True and call `query` which
+                    //          will `update` the view anyways, without storing the Cell
+                    model.cells[addr] = Cell(addr);
+                    model.cells[addr].query(update);
+                }
             }
             else if (idx + MODEL_DEPTH + 2 < model.spatial_param) {
                 /* needs further depth expansion

@@ -112,7 +112,7 @@ function query(addr_str) {
 }
 
 function animate() {
-    requestAnimFrame(animate);
+    // requestAnimFrame(animate);
     controls.update();
     model.pose[0] = controls.getAzimuthalAngle(); // longitude -- around y axis
     model.pose[1] = controls.getPolarAngle(); // latitude  -- around x axis

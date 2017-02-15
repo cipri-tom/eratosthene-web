@@ -48,7 +48,6 @@ function Address(addrStr) {
 
     // construct from string
     if (addrStr) {
-        self.as_str = addrStr;
         var parts = addrStr.split('/');
         if (parts.length != 4 || parts[0] || !parts[1] || !parts[2] || !parts[3])
             throw("Invalid address");
@@ -116,10 +115,17 @@ function Address(addrStr) {
         var other    = new Address();
         other.time   = self.time;
         other.depth  = self.depth;
-        other.as_str = self.as_str;
         other.size   = self.size;
         for (var i = 0; i < self.size; ++i)
             other.digits[i] = self.digits[i];
         return other;
+    }
+
+    self.toString = function() {
+        // If the Address was immutable, then we could have returned the existing string
+        // However, it is not, so we have to generate it every time
+
+        var pose = self.digits.join("");
+        return "/" + self.time + "/" + pose + "/" + self.depth;
     }
 }
