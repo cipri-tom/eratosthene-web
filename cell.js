@@ -11,12 +11,13 @@ var MODEL_DEPTH = 7;
 
 
 function spherical_to_cartesian(pose) {
-    /** Modifies IN PLACE!
-        Input: [lon, lat, rad] === Output: [x, y, z] */
-    pose[2] = Math.cos(pose[1]) * Math.cos(pose[0]);
-    pose[0] = Math.cos(pose[1]) * Math.sin(pose[0]);
-    pose[1] = Math.sin(pose[1]);
-    return pose;  // not really needed
+    /** IN PLACE
+        Input: [lon, lat, rad]
+        Output: [x, y, z]
+    */
+    return new THREE.Vector3()
+                    .setFromSpherical(new THREE.Spherical(pose[2], pose[1], pose[0]))
+                    .toArray(pose)
 }
 
 function depth_threshold(distance, spatial_p) {
@@ -41,30 +42,34 @@ function distance_threshold(altitude) {
     return (altitude * (1 - 0.75 * Math.exp(-2 * Math.PI * normal * normal)));
 }
 
-function distance(pose_A, pose_B, in_cartesian) {
-    /**  Calculates cartesian distance between the given poses.
-    These can be specified either as polar or cartesian coords, as indicated by
-    `in_cartesian` flag */
+function distance(addr, view_pose) {
+    /**  Specialised distance function between viewpoint and address */
 
-    var diff;
-    if (! in_cartesian) {
-        pose_A = spherical_to_cartesian(pose_A.slice());
-        pose_B = spherical_to_cartesian(pose_B.slice());
-        diff   = pose_A;
-    }
-    else
-        diff = pose_A.slice(); // avoid modifying original
+    view_pose = view_pose.slice(); // leave the original intact
 
-    // compute difference
-    diff[0] -= pose_B[0];
-    diff[1] -= pose_B[1];
-    diff[2] -= pose_B[2];
+    // get pose at address and restore its altitude
+    var cell_pose = addr.pose;
+    cell_pose[2] += EARTH_RADIUS;
+
+    // since pose is at the "edge" shift to get distance to the cell's centre
+    var scale = 1 << (addr.size + 1);
+    var shift = LE_GEODESY_LRAN / scale;
+    cell_pose[0] += shift;
+    cell_pose[1] += shift;
+    cell_pose[2] += 2 * Math.PI * EARTH_RADIUS / scale;
+
+    // convert both to cartesian
+    spherical_to_cartesian(cell_pose);
+    spherical_to_cartesian(view_pose);
+
+    // compute difference (reusing the same array)
+    cell_pose[0] -= view_pose[0];
+    cell_pose[1] -= view_pose[1];
+    cell_pose[2] -= view_pose[2];
 
     // distance is norm of difference
-    return Math.sqrt(diff[0]*diff[0] + diff[1]*diff[1] + diff[2]*diff[2]);
+    return Math.sqrt(cell_pose[0]*cell_pose[0] + cell_pose[1]*cell_pose[1] + cell_pose[2]*cell_pose[2]);
 }
-
-
 
 // addresses with size smaller than this are always fully generated
 var CONDITIONAL_RECURSION_IDX = 3;
@@ -93,38 +98,55 @@ function fill_viewable(model, addr, idx, cell) {
 
     // if we arrived from checking a daughter cell which has no data under it
     // then there is no need to further generate
-    if (cell && cell.size === 0)
+    if (cell && cell.size === 0) {
+        // but keep track that we already checked this
+        model.cells[cell.addr] = true;
         return;
+    }
 
     // we will generate cells based on their addresses
     // we start with an empty one
 
+    // create new slot
+    addr.digits.push(0);
+    if (addr.size !== idx + 1)
+        Util.Warn("Inconsistent address generation");
+
     // iterate through all the possible digits that can appear at `idx`
     var max_digit = addr.max_digit(idx);
-    for (var digit = 0; digit <= max_digit; ++digit) { // CAN BE EQUAL!!
+    for (var digit = 0; digit < max_digit; ++digit) { // can NOT be equal !!
+        // update address with this digit
         addr.digits[idx] = digit;
-        addr.size = idx;
+
+        // ignore if we have seen it before
+        if (model.cells[addr] != undefined)
+            continue;
+
         if (idx > CONDITIONAL_RECURSION_IDX) {
-            // only generate cells in the close vecinity:
-            // TODO: shift to get distance to cell's center
-            var dist = distance(addr.get_pose(), model.pose, false); // in polar
+            // TODO: already check if it's in the model and skip if yes
+            //       this also means that you can set empty addresses to avoid
+            //       further querying
+
+            // get distance from viewpoint to this addr
+            var dist = distance(addr, model.pose);
+
+            // skip cells that are too far away:
             if (dist >= distance_threshold(model.pose[2]))
                 continue;
 
             // check if cell has enough depth (i.e. detailed enough):
             if (Math.abs(depth_threshold(dist, model.spatial_param) - idx) < 1) {
-                // OK, has enough depth, add this cell
+                // OK, has enough depth, we can add it to the model
+
+                // set the correct depth
+                addr.depth = MODEL_DEPTH;
 
                 // TODO: check maximum number of new cells
-                addr.depth = MODEL_DEPTH;
-                if (model.cells[addr] == undefined) { // it's a new one
-                    // Add it to the model
-                    // TODO: memory consideration -- Cell is quite big as of now
-                    //          what if you store just True and call `query` which
-                    //          will `update` the view anyways, without storing the Cell
-                    model.cells[addr] = Cell(addr);
-                    model.cells[addr].query(update);
-                }
+                // TODO: memory consideration -- Cell is quite big as of now
+                //          what if you store just True and call `query` which
+                //          will `update` the view anyways, without storing the Cell
+                model.cells[addr] = new Cell(addr);
+                model.cells[addr].query(update);
             }
             else if (idx + MODEL_DEPTH + 2 < model.spatial_param) {
                 /* needs further depth expansion
@@ -132,8 +154,8 @@ function fill_viewable(model, addr, idx, cell) {
                    an array of cells with no data */
 
                 // since the `query` is async, we can't block here. Instead, we
-                // set the callback to this function with prepopulated parameters
-                // i.e. as if the recursion continued.
+                // set the callback to this same function but with prepopulated
+                // parameters i.e. as if the recursion continued.
                 // The `query` will populate the remainig `cell` param
                 var continuation_function = fill_viewable.bind(this, model, addr.clone(), idx + 1)
 
@@ -147,6 +169,9 @@ function fill_viewable(model, addr, idx, cell) {
             fill_viewable(model, addr, idx + 1);
         }
     }
+
+    // remove this slot
+    addr.digits.pop();
 }
 
 
@@ -216,7 +241,7 @@ function Cell(addr) {
          * Checks it is correctly authenticating the socket
          * Should not be called directly! Pairs with `connect`
          */
-        Util.Info(`Receiving auth: ${socket.rQlen()} bytes`);
+        // Util.Info(`Receiving auth: ${socket.rQlen()} bytes`);
         var r = socket.rQshift32();  // 4 bytes, littleEndian
         if ((r & 0x7F) === 2) {
             // auth succeeded, now we're ready to receive messages:
@@ -241,10 +266,12 @@ function Cell(addr) {
 
     function close_and_read() {
         console.timeEnd("networking");
-        console.time("constructing");
         Util.Info(`received ${socket.rQlen()} bytes in ${num_messages} messages`);
 
-        self.edge = self.addr.get_pose();
+        // console.time("constructing");
+        // the edge is defined to be at 0 altitude (i.e. EARTH_RADIUS)
+        self.edge = self.addr.pose;
+        self.edge[2] = EARTH_RADIUS;
         spherical_to_cartesian(self.edge);
 
         var received_bytes = socket.get_rQ(),
@@ -269,16 +296,20 @@ function Cell(addr) {
                  || data_offset !== curr_pt * 3)
                 throw "Mis-aligned reading detected";
 
+            // extract vertices -- lon, lat, alt
             pose[0] = dv.getFloat64(offset     , true);  // true == little endian
             pose[1] = dv.getFloat64(offset + 8 , true);
             pose[2] = dv.getFloat64(offset + 16, true);
             offset += CELL_POSE_SIZE;
 
+            // only the meaningful part of altitude is received, so we need to restore the rest
+            pose[2] += EARTH_RADIUS;
+
             // convert and translate relative to edge
             spherical_to_cartesian(pose);
-            pose[0] = EARTH_RADIUS * (pose[0]);// - self.edge[0]);
-            pose[1] = EARTH_RADIUS * (pose[1]);// - self.edge[1]);
-            pose[2] = EARTH_RADIUS * (pose[2]);// - self.edge[2]);
+            // pose[0] = pose[0] - self.edge[0]);
+            // pose[1] = pose[1] - self.edge[1]);
+            // pose[2] = pose[2] - self.edge[2]);
 
             // push in the cell's data
             positions[pose_offset    ] = pose[0];
@@ -294,7 +325,7 @@ function Cell(addr) {
             data_offset += 3;
         }
 
-        console.timeEnd("constructing");
+        // console.timeEnd("constructing");
         socket = null;   // dispose
 
         // finished, use callback

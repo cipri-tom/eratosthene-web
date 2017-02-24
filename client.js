@@ -1,6 +1,7 @@
 "use strict";
 
-WebUtil.init_logging();
+WebUtil.init_logging(); // use with link as http://....?logging=info
+
 var renderer, scene, camera, controls, gui;
 var material_g;
 var cell_g;
@@ -68,7 +69,7 @@ function init_camera(scene) {
                     1e8             // Far plane
     );
     // camera.position.set( EARTH_RADIUS, EARTH_RADIUS, EARTH_RADIUS );
-    camera.position.set( 2111672,  4730978,  10963018 );
+    camera.position.set( 838378,  5284834,  5236573 );
     camera.lookAt(scene.position);
 
     // set some logging elements
@@ -83,7 +84,7 @@ function init_camera(scene) {
     return camera
 }
 
-function init(cell) {
+function init() {
     // init material
     material_g = new THREE.PointsMaterial({
                     // color: 0xFF0000,
@@ -100,8 +101,7 @@ function init(cell) {
     controls = init_controls();
     gui      = init_gui();
 
-    renderer.render(scene, camera);
-    animate();
+    render();
 }
 
 
@@ -112,17 +112,24 @@ function query(addr_str) {
 }
 
 function animate() {
-    // requestAnimFrame(animate);
-    controls.update();
-    model.pose[0] = controls.getAzimuthalAngle(); // longitude -- around y axis
-    model.pose[1] = controls.getPolarAngle(); // latitude  -- around x axis
-    model.pose[2] = controls.object.position.length();
+}
 
-    fill_viewable(model, new Address(), 0);
+
+var addr_seed = new Address("/950486400//0");
+function fill() {
+    fill_viewable(model, addr_seed, 0);
 }
 
 
 function render() {
+    // this in needed if we have damping
+    // requestAnimFrame(animate);
+    // controls.update();
+
+    model.pose[0] = controls.getAzimuthalAngle(); // longitude -- around y axis
+    model.pose[1] = controls.getPolarAngle(); // latitude  -- around x axis
+    model.pose[2] = controls.object.position.length();
+
     // console.log('render');
     renderer.render( scene, camera );
     camera_pos.textContent = camera.position.toArray().join('   ');
@@ -131,7 +138,6 @@ function render() {
 }
 
 function update(cell) {
-    console.log("update");
     var points = new THREE.Points(cell.get_geometry(), material_g);
     scene.add(points);
 
