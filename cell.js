@@ -11,13 +11,14 @@ var MODEL_DEPTH = 7;
 
 
 function spherical_to_cartesian(pose) {
-    /** IN PLACE
-        Input: [lon, lat, rad]
+    /** Input : [lon, lat, rad]
         Output: [x, y, z]
     */
-    return new THREE.Vector3()
-                    .setFromSpherical(new THREE.Spherical(pose[2], pose[1], pose[0]))
-                    .toArray(pose)
+    var cart = [0, 0, 0];
+    cart[0] = pose[2] * Math.cos(pose[1]) * Math.sin(pose[0]); // x
+    cart[1] = pose[2] * Math.sin(pose[1]);                     // y
+    cart[2] = pose[2] * Math.cos(pose[1]) * Math.cos(pose[0]); // z
+    return cart;
 }
 
 function depth_threshold(distance, spatial_p) {
@@ -45,8 +46,6 @@ function distance_threshold(altitude) {
 function distance(addr, view_pose) {
     /**  Specialised distance function between viewpoint and address */
 
-    view_pose = view_pose.slice(); // leave the original intact
-
     // get pose at address and restore its altitude
     var cell_pose = addr.pose;
     cell_pose[2] += EARTH_RADIUS;
@@ -59,8 +58,8 @@ function distance(addr, view_pose) {
     cell_pose[2] += 2 * Math.PI * EARTH_RADIUS / scale;
 
     // convert both to cartesian
-    spherical_to_cartesian(cell_pose);
-    spherical_to_cartesian(view_pose);
+    cell_pose = spherical_to_cartesian(cell_pose);
+    view_pose = spherical_to_cartesian(view_pose);
 
     // compute difference (reusing the same array)
     cell_pose[0] -= view_pose[0];
@@ -118,7 +117,7 @@ function fill_viewable(model, addr, idx, cell) {
         // update address with this digit
         addr.digits[idx] = digit;
 
-        // ignore if we have seen it before
+        // ignore if we have seen it before (including empty ones)
         if (model.cells[addr] != undefined)
             continue;
 
@@ -136,17 +135,22 @@ function fill_viewable(model, addr, idx, cell) {
 
             // check if cell has enough depth (i.e. detailed enough):
             if (Math.abs(depth_threshold(dist, model.spatial_param) - idx) < 1) {
-                // OK, has enough depth, we can add it to the model
+                // OK, has enough depth, we can process it
 
                 // set the correct depth
                 addr.depth = MODEL_DEPTH;
 
-                // TODO: check maximum number of new cells
-                // TODO: memory consideration -- Cell is quite big as of now
-                //          what if you store just True and call `query` which
-                //          will `update` the view anyways, without storing the Cell
-                model.cells[addr] = new Cell(addr);
-                model.cells[addr].query(update);
+                // here we have to check again, because we cannot set the "top level"
+                // cell as seen (depth = 0), we need with this specific depth
+                if (model.cells[addr] == undefined) {
+                    // set as seen
+                    // TODO: check maximum number of new cells
+                    model.cells[addr] = true;
+
+                    // query
+                    new Cell(addr).query(update);
+                }
+
             }
             else if (idx + MODEL_DEPTH + 2 < model.spatial_param) {
                 /* needs further depth expansion
@@ -272,7 +276,7 @@ function Cell(addr) {
         // the edge is defined to be at 0 altitude (i.e. EARTH_RADIUS)
         self.edge = self.addr.pose;
         self.edge[2] = EARTH_RADIUS;
-        spherical_to_cartesian(self.edge);
+        self.edge = spherical_to_cartesian(self.edge);
 
         var received_bytes = socket.get_rQ(),
             start = socket.get_rQi();
@@ -306,10 +310,10 @@ function Cell(addr) {
             pose[2] += EARTH_RADIUS;
 
             // convert and translate relative to edge
-            spherical_to_cartesian(pose);
-            // pose[0] = pose[0] - self.edge[0]);
-            // pose[1] = pose[1] - self.edge[1]);
-            // pose[2] = pose[2] - self.edge[2]);
+            pose = spherical_to_cartesian(pose);
+            // pose[0] = pose[0] - self.edge[0];
+            // pose[1] = pose[1] - self.edge[1];
+            // pose[2] = pose[2] - self.edge[2];
 
             // push in the cell's data
             positions[pose_offset    ] = pose[0];
