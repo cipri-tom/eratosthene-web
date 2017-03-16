@@ -8,7 +8,7 @@ var cell_g;
 var camera_pos, camera_rot, camera_sph;
 var model;
 
-function init_controls() {
+function init_controls(camera, renderer) {
     var controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.rotateSpeed = 0.1;
     controls.zoomSpeed = 0.1;
@@ -98,7 +98,7 @@ function init() {
     renderer = init_renderer('le_canvas');
     scene    = init_scene();
     camera   = init_camera(scene);
-    controls = init_controls();
+    controls = init_controls(camera, renderer);
     gui      = init_gui();
 
     render();
@@ -106,6 +106,7 @@ function init() {
 
 
 function query(addr_str) {
+    console.log(addr_str);
     var cell = new Cell(addr_str);
     cell.callback = update
     cell.query();

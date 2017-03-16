@@ -30,11 +30,29 @@ var LE_GEODESY_HRAN = LE_GEODESY_HMAX - LE_GEODESY_HMIN;
 
 
 function num2bytes(num) {
+    /* JS does bit shifting on 32 bits :(
+    This function does it manually for numbers up to 40 bits
+    which should be enough for our purposes
+    */
+    if (Math.abs(num) >= 2**40)
+        Util.Warn("Unsafe integer, will have wrong result");
+
     var bytes = [];
-    for (var i = 0; i < 8; ++i) {
+    // do the 'unsafe' part first (> 32-bit)
+    if (num >= 0)
+        bytes[5] = bytes[6] = bytes[7] = 0;
+    else
+        bytes[5] = bytes[6] = bytes[7] = 0xFF; // negative, use 2s complement
+
+    // extract the fifth byte via simulated shift
+    bytes[4] = Math.floor(num / 2**32) & 0xFF;
+
+    // do the safe part
+    for (var i = 0; i < 4; ++i) {
         bytes[i] = num & 0xFF;
         num = num >> 8;
     }
+
     return bytes;
 }
 

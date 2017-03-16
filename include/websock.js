@@ -289,7 +289,7 @@ function init(protocols, ws_schema) {
     try {
         if (bt && ('binaryType' in WebSocket.prototype ||
                    !!(new WebSocket(ws_schema + '://.').binaryType))) {
-            Util.Info("Detected binaryType support in WebSockets");
+            // Util.Info("Detected binaryType support in WebSockets");
             wsbt = true;
         }
     } catch (exc) {
@@ -348,7 +348,7 @@ function open(uri, protocols) {
         Util.Debug(">> WebSock.onopen");
         if (websocket.protocol) {
             mode = websocket.protocol;
-            Util.Info("Server chose sub-protocol: " + websocket.protocol);
+            // Util.Info("Server chose sub-protocol: " + websocket.protocol);
         } else {
             mode = 'base64';
             Util.Error("Server select no sub-protocol!: " + websocket.protocol);
@@ -373,7 +373,7 @@ function close() {
     if (websocket) {
         if ((websocket.readyState === WebSocket.OPEN) ||
             (websocket.readyState === WebSocket.CONNECTING)) {
-            Util.Info("Closing WebSocket connection");
+            // Util.Info("Closing WebSocket connection");
             websocket.close();
         }
         websocket.onmessage = function (e) { return; };
