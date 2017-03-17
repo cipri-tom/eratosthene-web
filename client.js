@@ -32,9 +32,8 @@ function init_gui() {
     return gui
 }
 
-function init_renderer(canvas_id) {
-    var c = document.getElementById(canvas_id);
-    var renderer = new THREE.WebGLRenderer({canvas: c});
+function init_renderer(canvas) {
+    var renderer = new THREE.WebGLRenderer({canvas: canvas});
     renderer.setSize(800, 640);
     renderer.setClearColor( 0x0, 1);
     return renderer;
@@ -99,12 +98,15 @@ function init() {
 
     // init global vars
     model    = new Model();
-    renderer = init_renderer('le_canvas');
+
+    var cvs  = document.getElementById('le_canvas');
+    renderer = init_renderer(cvs);
     scene    = init_scene();
     camera   = init_camera(scene);
     controls = init_controls(camera, renderer);
     gui      = init_gui();
 
+    controls.addEventListener('end', model.handle_update);
     render();
 }
 
@@ -119,19 +121,10 @@ function query(addr_str) {
 function animate() {
 }
 
-
-var addr_seed = new Address("/-3773779200//0");
-function fill() {
-    if (document.getElementById('fill_cb').checked)
-        fill_viewable(model, addr_seed, 0);
-}
-
-
 function render() {
     // this in needed if we have damping
     // requestAnimFrame(animate);
     // controls.update();
-    fill();
 
     model.pose[0] = controls.getAzimuthalAngle(); // longitude -- around y axis
     model.pose[1] = controls.getPolarAngle(); // latitude  -- around x axis
@@ -149,5 +142,6 @@ function update(cell) {
     scene.add(points);
     render();
 }
+
 
 window.onload = init;

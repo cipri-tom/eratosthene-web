@@ -21,7 +21,9 @@
 <body>
     <canvas id="le_canvas"></canvas>
     <br/>
-    <input  id="fill_cb" type="checkbox" name="fill"">Fill</input>
+    <input type="button" value="Render" onclick="render()">
+    <input type="button" value="Fill"   onclick="fill()">
+    <input type="checkbox" id="auto_fill" checked>Fill on change</input>
     <div>
         <h2>Big tiles: </h2>
         <input type="text" id="big1" value="/950486422/1220011/1" autofocus>
@@ -71,9 +73,6 @@
         <input type="text"   value="/-3773779200/12200100234331324367/8" id="geneva_1850_27"  />
         <input type="button" value="Query" onclick="query(getElementById('geneva_1850_17').value)" /><br/>
     </div>
-    <br/>
-    <input type="button" value="Render" onclick="render()">
-    <input type="button" value="Fill"   onclick="fill()">
     <br/>
 
     Camera position:  <span id="camera_pos">0,0,0</span><br/>
