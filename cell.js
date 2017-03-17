@@ -142,14 +142,14 @@ function fill_viewable(model, addr, idx, cell) {
 
                 // here we have to check again, because we cannot set the "top level"
                 // cell as seen (depth = 0), we need with this specific depth
-                if (model.cells[addr] == undefined) {
+                // if (model.cells[addr] == undefined) {
                     // set as seen
                     // TODO: check maximum number of new cells
                     model.cells[addr] = true;
 
                     // query
                     new Cell(addr).query(update);
-                }
+                // }
 
             }
             else if (idx + MODEL_DEPTH + 2 < model.spatial_param) {

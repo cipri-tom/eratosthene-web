@@ -10,14 +10,15 @@ var model;
 
 function init_controls(camera, renderer) {
     var controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.rotateSpeed = 0.1;
-    controls.zoomSpeed = 0.1;
+    controls.rotateSpeed = 0.0001;
+    controls.zoomSpeed = 0.0001;
     controls.panSpeed = 1.0;
 
     controls.enableZoom = true;
     controls.enablePan  = true;
+    controls.enableKeys = false;
 
-    controls.enableDamping = true;
+    // controls.enableDamping = true; // need to call update in animation loop
     controls.dampingFactor = 0.3;
     controls.addEventListener('change', render);
     return controls;
@@ -68,8 +69,11 @@ function init_camera(scene) {
                     1,              // Near plane
                     1e8             // Far plane
     );
-    // camera.position.set( EARTH_RADIUS, EARTH_RADIUS, EARTH_RADIUS );
-    camera.position.set( 838378,  5284834,  5236573 );
+    // above big tiles
+    camera.position.set( 695030.2193962388, 4992938.408158433, 4750739.144573923 );
+
+    // above small model
+    // camera.position.set( 472399.82473350444, 4604239.973148383, 4389188.252209952 );
     camera.lookAt(scene.position);
 
     // set some logging elements
@@ -116,9 +120,10 @@ function animate() {
 }
 
 
-var addr_seed = new Address("/950486400//0");
+var addr_seed = new Address("/-3773779200//0");
 function fill() {
-    fill_viewable(model, addr_seed, 0);
+    if (document.getElementById('fill_cb').checked)
+        fill_viewable(model, addr_seed, 0);
 }
 
 
@@ -126,6 +131,7 @@ function render() {
     // this in needed if we have damping
     // requestAnimFrame(animate);
     // controls.update();
+    fill();
 
     model.pose[0] = controls.getAzimuthalAngle(); // longitude -- around y axis
     model.pose[1] = controls.getPolarAngle(); // latitude  -- around x axis
@@ -141,30 +147,6 @@ function render() {
 function update(cell) {
     var points = new THREE.Points(cell.get_geometry(), material_g);
     scene.add(points);
-
-    // 2102489.713178938 - 10678947.964956952
-    // var positions = new Float32Array(cell.poses);  // precision loss
-    // var colors    = new Uint8Array(cell.data);
-    // var positions = new Float32Array( [
-    //    -3.0, -1.0,  1.0,
-    //     1.0, -1.0,  1.0,
-    //     2.0,  1.0,  1.0,
-
-    //     1.0,  1.0,  1.0,
-    //    -1.0,  1.0,  1.0,
-    //    -1.0, -1.0,  1.0
-    // ]);
-    // var colors    = new Uint8Array([
-    //     1.0, 1.0, 1.0,
-    //     1.0, 1.0, 1.0,
-    //     1.0, 1.0, 1.0,
-
-    //     1.0, 1.0, 1.0,
-    //     1.0, 1.0, 1.0,
-    //     1.0, 1.0, 1.0,
-    // ]);
-    // geometry.addAttribute('position', new THREE.BufferAttribute(positions, 3));
-    // geometry.addAttribute('color'   , new THREE.BufferAttribute(colors   , 3)); // true -- normalise them when passing to the shader
     render();
 }
 
