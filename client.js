@@ -5,11 +5,11 @@ WebUtil.init_logging(); // use with link as http://....?logging=info
 var renderer, scene, camera, controls, gui;
 var material_g;
 var cell_g;
-var camera_pos, camera_rot, camera_sph;
+var camera_pos, camera_rot;
 var model;
 
-function init_controls(camera, renderer) {
-    var controls = new THREE.OrbitControls(camera, renderer.domElement);
+function init_controls(camera, canvas) {
+    var controls = new THREE.OrbitControls(camera, canvas);
     controls.rotateSpeed = 0.0001;
     controls.zoomSpeed = 0.0001;
     controls.panSpeed = 1.0;
@@ -18,22 +18,19 @@ function init_controls(camera, renderer) {
     controls.enablePan  = true;
     controls.enableKeys = false;
 
-    // controls.enableDamping = true; // need to call update in animation loop
-    controls.dampingFactor = 0.3;
-    controls.addEventListener('change', render);
     return controls;
 }
 
-function init_gui() {
+function init_gui(controls) {
     var gui = new dat.GUI();
     gui.add(controls, 'zoomSpeed'  , 0, 3);
     gui.add(controls, 'rotateSpeed', 0, 3);
     gui.add(controls, 'panSpeed'   , 0, 3);
-    return gui
+    return gui;
 }
 
 function init_renderer(canvas) {
-    var renderer = new THREE.WebGLRenderer({canvas: canvas});
+    var renderer = new THREE.WebGLRenderer({canvas: canvas, logarithmicDepthBuffer: true});
     renderer.setSize(800, 640);
     renderer.setClearColor( 0x0, 1);
     return renderer;
@@ -69,20 +66,27 @@ function init_camera(scene) {
                     1e8             // Far plane
     );
     // above big tiles
-    camera.position.set( 695030.2193962388, 4992938.408158433, 4750739.144573923 );
+    // camera.position.set( 695030.2193962388, 4992938.408158433, 4750739.144573923 );
 
-    // above small model
+    // above small model with correct orientation
+    // camera.position.set( 492731.9116620413, 4414565.349344852, 4577862.348045128 );
+
+    // above small model with wrong orientation
     // camera.position.set( 472399.82473350444, 4604239.973148383, 4389188.252209952 );
+    camera.position.set( 472394.9785697057, 4604192.740063384, 4389143.225255882 );
+
+    // camera.position.set( 472283.76106439694, 4604562.653440646, 4389503.187120511 );
+// [492664.38770525873, 4414496.867704961, 4577663.836644989]
+
+
     camera.lookAt(scene.position);
 
     // set some logging elements
     camera_pos = document.getElementById('camera_pos');
     camera_rot = document.getElementById('camera_rot');
-    camera_sph = document.getElementById('camera_sph');
 
     camera_pos.textContent = camera.position.toArray().join('   ');
     camera_rot.textContent = camera.rotation.toArray().join('   ');
-    camera_sph.textContent = model .pose              .join('   ');
 
     return camera
 }
@@ -97,16 +101,17 @@ function init() {
                 });
 
     // init global vars
-    model    = new Model();
-
     var cvs  = document.getElementById('le_canvas');
     renderer = init_renderer(cvs);
     scene    = init_scene();
     camera   = init_camera(scene);
-    controls = init_controls(camera, renderer);
-    gui      = init_gui();
 
+    controls = init_controls(camera, cvs);
+    gui      = init_gui(controls);
+
+    model    = new Model();
     controls.addEventListener('end', model.handle_update);
+    controls.addEventListener('change', render);
     render();
 }
 
@@ -118,23 +123,11 @@ function query(addr_str) {
     cell.query();
 }
 
-function animate() {
-}
-
 function render() {
-    // this in needed if we have damping
-    // requestAnimFrame(animate);
-    // controls.update();
-
-    model.pose[0] = controls.getAzimuthalAngle(); // longitude -- around y axis
-    model.pose[1] = controls.getPolarAngle(); // latitude  -- around x axis
-    model.pose[2] = controls.object.position.length();
-
     // console.log('render');
     renderer.render( scene, camera );
     camera_pos.textContent = camera.position.toArray().join('   ');
     camera_rot.textContent = camera.rotation.toArray().join('   ');
-    camera_sph.textContent = model .pose              .join('   ');
 }
 
 function update(cell) {
