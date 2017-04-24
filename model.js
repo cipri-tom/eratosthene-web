@@ -6,8 +6,8 @@ function Model() {
     this.pose = [0,0,0];     // lon, lat, alt
     this.cells = {};         // stores the addresses of the cells that have already been generated
 
-    // this._seed_addr = new Address("/950486422//0");
-    this._seed_addr = new Address("/-3773779200//0");
+    this._seed_addr = new Address("/950486422//0");
+    // this._seed_addr = new Address("/-3773779200//0");
     var self = this;
 
     this.fill = function() {

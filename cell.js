@@ -99,7 +99,7 @@ function fill_viewable(model, addr, idx, cell) {
     // then there is no need to further generate
     if (cell && cell.size === 0) {
         // but keep track that we already checked this
-        model.cells[cell.addr] = true;
+        model.cells[cell.addr] = 0;
         return;
     }
 
@@ -118,7 +118,7 @@ function fill_viewable(model, addr, idx, cell) {
         addr.digits[idx] = digit;
 
         // ignore if we have seen it before (including empty ones)
-        if (model.cells[addr] != undefined)
+        if (model.cells[addr] === 0)
             continue;
 
         if (idx > CONDITIONAL_RECURSION_IDX) {

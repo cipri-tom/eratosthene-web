@@ -66,14 +66,14 @@ function init_camera(scene) {
                     1e8             // Far plane
     );
     // above big tiles
-    // camera.position.set( 695030.2193962388, 4992938.408158433, 4750739.144573923 );
+    camera.position.set( 695030.2193962388, 4992938.408158433, 4750739.144573923 );
 
     // above small model with correct orientation
     // camera.position.set( 492731.9116620413, 4414565.349344852, 4577862.348045128 );
 
     // above small model with wrong orientation
     // camera.position.set( 472399.82473350444, 4604239.973148383, 4389188.252209952 );
-    camera.position.set( 472394.9785697057, 4604192.740063384, 4389143.225255882 );
+    // camera.position.set( 472394.9785697057, 4604192.740063384, 4389143.225255882 );
 
     // camera.position.set( 472283.76106439694, 4604562.653440646, 4389503.187120511 );
 // [492664.38770525873, 4414496.867704961, 4577663.836644989]
@@ -112,6 +112,19 @@ function init() {
     model    = new Model();
     controls.addEventListener('end', model.handle_update);
     controls.addEventListener('change', render);
+
+    camera.position.set( 695030.2193962388, 4992938.408158433, 4750739.144573923 );
+    controls.rotateSpeed = 0.1;
+    controls.zoomSpeed = 0.1;
+    model._seed_addr = new Address("/950486422//0");
+
+
+    // camera.position.set( 472416.78669831273, 4604405.292761797, 4389345.850186872 );
+    // camera.lookAt(scene.position);
+    // controls.rotateSpeed = 0.0001;
+    // controls.zoomSpeed = 0.0001;
+    // model._seed_addr = new Address("/-3773779200//0");
+
     render();
 }
 
