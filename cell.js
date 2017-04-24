@@ -1,7 +1,7 @@
 "use strict";
 
 // constants
-var HOST = "ws://127.0.0.1:43427"
+var HOST = "ws://127.0.0.1:11025"
 
 var CELL_DATA_SIZE = 3 * 1;    // RGB 1-byte colour
 var CELL_POSE_SIZE = 3 * 8;    // longitude, latitude, altitude as double precision
