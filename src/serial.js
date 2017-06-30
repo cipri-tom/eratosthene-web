@@ -1,16 +1,21 @@
-'use strict';
+/* global Util */
 
-/* global Util Address */
-
+import { Address } from './address';
+import Queue from '../lib/Queue'
 
 /** Similar to the default getUint32 but it is always in little endian */
-DataView.prototype.getUint32LE = function(offset) {
+DataView.prototype.getUint32LE = function dvGetUint32LE(offset) {
   return this.getUint32(offset, true);
 };
 
-DataView.prototype.getUint64 = function() {
-
-}
+DataView.prototype.getUint64LE = function dvGetUint64LE(offset) {
+  const bytesL = this.getUint32(offset, true);
+  const bytesH = this.getUint32(offset + 4, true);
+  const result = bytesH * 4294967296.0 + bytesL;
+  if (result > Number.MAX_SAFE_INTEGER)
+    throw new Error('Cannot extract uint64 safely');
+  return result;
+};
 
 /** Expands `num` into a list of bytes */
 function num2bytes(num) {
@@ -50,12 +55,53 @@ function num2bytes(num) {
  *
  * @param (string) type: 'AGREE', 'ADDR_SINGLE', 'ADDR_MULTI', 'CELL'
  */
-function ErArray(size) {
-  this.length = 0;
-  if (size === 'AGREE') {
-    this.bytes = new Uint8Array([0xff, 0xff, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00]);
+class ErArray {
+  constructor(dv, offset) {
+    if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new Error('Cannot build ErArray: not enough data');
+    this.cLength = dv.getUint64LE(offset);
+    this.length = dv.getUint64LE(offset + 8);
+
+    const bytesAvailable = dv.byteLength - offset - ErArray.ARRAY_HEADER;
+    if (this.cLength <= bytesAvailable) {
+      this.isFull = true;
+      this.bytes = ErArray.decompress(dv, offset);
+    } else {
+      this.isFull = false;
+      this.cBytes = new Uint8Array(this.cLength);
+      this.cBytes.set(new Uint8Array(dv.buffer, offset + ErArray.ARRAY_HEADER));  // with everything remaining
+      this.cFilled = bytesAvailable;
+    }
   }
+
+  fill(msg) {
+    if (this.isFull) throw new Error('Array already full');
+    const newBytes = msg.popBytes(this.cLength - this.cFilled);
+    this.cBytes.set(newBytes, this.cFilled);
+    this.cFilled += newBytes.length;
+
+    if (this.cFilled === this.cLength) {
+      this.bytes = ErArray.decompress(new DataView(this.cBytes.buffer), 0);
+      this.isFull = true;
+      delete this.cBytes;
+      delete this.cFilled;
+    }
+  }
+
+  static decompress() {
+
+  }
+
+  // isComplete(dv, offset) {
+  //   return dv.getUint64LE(offset) <= dv.byteLength - offset - ErArray.ARRAY_HEADER;
+  // }
 }
+Object.defineProperties(ErArray.prototype, {
+  compressedLength: {
+    get() { return this.cLength + ErArray.ARRAY_HEADER; },
+    set() { throw new Error('Cannot set read-only property'); },
+  },
+});
+
 
 ErArray.ARRAY_SIZE_STEP = 1048576;  // increase in 1 Mb steps
 ErArray.ARRAY_HEADER_SIZES = 2 * 8; // 2 * uint64 (vsize, csize)
@@ -71,91 +117,148 @@ const NETWORK = {
   get HOST() { return `${this.SCHEMA + this.IP}:${this.PORT}`; },
 
   MODE: { AUTH: 0x01 },
-
-  connect() {
-    const socket = new WebSocket(this.HOST, 'binary');
-
-    socket.onopen = function send_auth() {
-
-    };
-
-    socket.onmessage = function validate_auth(msg) {
-      console.log(msg);
-      // TODO
-    };
-  },
 };
 
-// Singleton socket -- One per client
-let GLOBAL_SOCKET = null;
-function connect() {
-  if (GLOBAL_SOCKET) throw new Error('Cannot connect twice');
+class Message {
+  constructor(buffer) {
+    this.dv = new DataView(buffer);
+    this.offset = 0;
+  }
 
-  return new Promise((resolve, reject) => {
-    const socket = new WebSocket(NETWORK.HOST, 'binary');
-    socket.binaryType = 'arraybuffer';
+  hasArray() {
+    return ErArray.isComplete(this.dv, this.offset);
+  }
 
-    // TODO: check binary is supported
+  popArray() {
+    const arr = new ErArray(this.dv, this.offset);
+    this.offset += arr.compressedLength;
+  }
 
-    socket.onerror = () => { Util.Error('Socket had an error'); };
-    socket.onclose = () => {
-      GLOBAL_SOCKET = null;
-      throw new Error('Connection to server failed / closed');
-    };
+  /** Returns next `maxLength` bytes or as many as available in this message */
+  popBytes(maxLength) {
+    const howMany = Math.min(this.dv.byteLength - this.offset, maxLength);
+    const bytes = new Uint8Array(this.dv.buffer, this.offset, length);
+    this.offset += howMany;
+    return bytes;
+  }
 
-    socket.onopen = function sendAuth() {
-      // construct agreement object: 0xffff0000ffff0000
-      const buf = new ArrayBuffer(ErArray.ARRAY_HEADER + 8);
-      const dv  = new DataView(buf);
-      let offset = 0;
+  isEmpty() {
+    return this.offset === this.dv.byteLength;
+  }
 
-      // setup array header -- vsize; value "8" written over 8 bytes
-      const vsize = 8;  // sizeof agreement data
-      dv.setUint32(offset, vsize, true); offset += 8;  // Uint32 suffices, the next 4 bytes are 0 anyway
+  asArray(length) {
+    return new Uint8Array(this.dv.buffer, this.offset, length);
+  }
+}
 
-      // setup array header -- csize=0; buffer is zeros by default, so we just skip
-      offset += 8;
+Object.defineProperties(Message.prototype, {
+  length: {
+    get() { return this.dv.byteLength - this.offset; },
+    set() { throw new Error('Cannot set read-only length of Message'); },
+  },
+});
 
-      // setup array header -- mode, 1 byte
-      dv.setUint8 (offset, NETWORK.MODE.AUTH); offset += 1;
 
-      // set agreement data: 0xffff0000ffff0000              -- total 8 bytes
-      dv.setUint32(offset, 0xffff0000, true);  offset += 4;  // first 4 bytes
-      dv.setUint32(offset, 0xffff0000, true);                // next  4 bytes
+class Serializer {
+  constructor() {
+    this.socket = null;
+    this.dataReceiverCb = null;
+    this.array = null;
+  }
 
-      socket.send(dv.buffer);
-    };
+  /** Establishes an authenticated connection to the server and sets up further message exchanges */
+  connect(dataReceiverCb) {
+    if (this.socket)          throw new Error('Cannot connect twice');
+    if (!this.dataReceiverCb) throw new Error('No data receiver given');
 
-    socket.onmessage = function validateAuth(msg) {
-      const dv = new DataView(msg.data);
-      let offset = 0;
-      // extract array header
-      const vsize  = dv.getUint32LE(offset); offset += 8;  // vsize is uint64, only the first 4 are relevant
-      const csize  = dv.getUint32LE(offset); offset += 8;  // same as vsize
-      const mode   = dv.getUint8   (offset); offset += 1;
+    this.dataReceiverCb = dataReceiverCb;
 
-      if (vsize !== 3 * 8 || csize !== 0) {
-        reject(new Error('Incorrect data in server agreement')); // the reply should have three size_t
-      }
+    return new Promise((resolve, reject) => {
+      const socket = new WebSocket(NETWORK.HOST, 'binary');
+      socket.binaryType = 'arraybuffer';
 
-      // extract the reply: agree, spaceParam, timeParam
-      const agreeL = dv.getUint32LE(offset), agreeH = dv.getUint32LE(offset + 4); offset += 8;
-      const spaceL = dv.getUint32LE(offset), spaceH = dv.getUint32LE(offset + 4); offset += 8;
-      const  timeL = dv.getUint32LE(offset),  timeH = dv.getUint32LE(offset + 4);
+      // TODO: check binary is supported
 
-      if (mode !== NETWORK.MODE.AUTH || agreeL !== 0x0000ffff || agreeH !== 0x0000ffff) {
-        reject(new Error('Server agreement failed'));
-      }
+      socket.onerror = () => { Util.Error('Socket had an error'); };
+      socket.onclose = () => {
+        this.socket = null;
+        throw new Error('Connection to server failed / closed');
+      };
 
-      if (spaceH !== 0 || timeH !== 0) {
-        reject(new Error('Server parameters bigger than expected'));
-      }
+      socket.onopen = function sendAuth() {
+        // construct agreement object: 0xffff0000ffff0000  -- 8 bytes
+        const buf = new ArrayBuffer(ErArray.ARRAY_HEADER + 8);
+        const dv  = new DataView(buf);
+        let offset = 0;
 
-      // all is well, setup the next messages -- nothing
-      socket.onmessage = () => { throw new Error('Unrequested message from server'); };
-      GLOBAL_SOCKET = socket;
+        // setup array header -- vsize; value "8" written over 8 bytes
+        const vsize = 8;  // sizeof agreement data
+        dv.setUint32(offset, vsize, true);       offset += 8;  // Uint32 suffices, the next 4 bytes are 0 anyway
 
-      resolve({ socket, spaceParam: spaceL, timeParam: timeL });
-    };
-  });
+        // setup array header -- csize=0; buffer is zeros by default, so we just skip
+        offset += 8;
+
+        // setup array header -- mode, 1 byte
+        dv.setUint8 (offset, NETWORK.MODE.AUTH); offset += 1;
+
+        // set agreement data: 0xffff0000ffff0000              -- total 8 bytes
+        dv.setUint32(offset, 0xffff0000, true);  offset += 4;  // first 4 bytes
+        dv.setUint32(offset, 0xffff0000, true);                // next  4 bytes
+
+        socket.send(dv.buffer);
+      };
+
+      socket.onmessage = function validateAuth(msg) {
+        const dv = new DataView(msg.data);
+        let offset = 0;
+        // extract array header
+        const vsize = dv.getUint32LE(offset); offset += 8;  // vsize is uint64, only the first 4 are relevant
+        const csize = dv.getUint32LE(offset); offset += 8;  // same as vsize
+        const mode  = dv.getUint8   (offset); offset += 1;
+
+        if (vsize !== 3 * 8 || csize !== 0) {               // need to receive 3 * size_t, uncompressed
+          reject(new Error('Incorrect data in server agreement'));
+        }
+
+        // extract the reply: agree, spaceParam, timeParam
+        const agreeL = dv.getUint32LE(offset);
+        const agreeH = dv.getUint32LE(offset + 4);
+        offset += 8;
+
+        const spaceL = dv.getUint32LE(offset);
+        const spaceH = dv.getUint32LE(offset + 4);
+        offset += 8;
+
+        const  timeL = dv.getUint32LE(offset);
+        const  timeH = dv.getUint32LE(offset + 4);
+
+        if (mode !== NETWORK.MODE.AUTH || agreeL !== 0x0000ffff || agreeH !== 0x0000ffff) {
+          reject(new Error('Server agreement failed'));
+        }
+
+        if (spaceH !== 0 || timeH !== 0) {
+          reject(new Error('Server parameters bigger than expected'));
+        }
+
+        // all is well, setup the next messages
+        socket.onmessage = this.deserialize.bind(this);
+        this.socket = socket;
+
+        resolve({ spaceParam: spaceL, timeParam: timeL });
+      };
+    });
+  }
+
+  deserialize(newMsgEvt) {
+    const msg = new Message(newMsgEvt.data);
+    if (!this.array)             this.array = new ErArray(msg);
+    else if (!this.array.isFull) this.array.fill(msg);
+
+
+    // consume -- pop as many arrays as possible from the rest of the message
+    while (this.array.isFull && !msg.isEmpty()) {
+      this.dataReceiverCb(this.array);
+      this.array = new ErArray(msg);
+    }
+  }
 }
