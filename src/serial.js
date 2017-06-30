@@ -57,16 +57,16 @@ function num2bytes(num) {
  */
 class ErArray {
   constructor(dv, offset) {
-    if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new Error('Cannot build ErArray: not enough data');
+    if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new Error('Cannot build ErArray: incomplete header');
     this.cLength = dv.getUint64LE(offset);
     this.length = dv.getUint64LE(offset + 8);
 
     const bytesAvailable = dv.byteLength - offset - ErArray.ARRAY_HEADER;
     if (this.cLength <= bytesAvailable) {
-      this.isFull = true;
-      this.bytes = ErArray.decompress(dv, offset);
+      this.cFilled = this.cLength;
+      const cBytes = new Uint8Array(dv.buffer, offset + ErArray.ARRAY_HEADER, this.cLength);
+      this.decompress(cBytes);
     } else {
-      this.isFull = false;
       this.cBytes = new Uint8Array(this.cLength);
       this.cBytes.set(new Uint8Array(dv.buffer, offset + ErArray.ARRAY_HEADER));  // with everything remaining
       this.cFilled = bytesAvailable;
@@ -87,7 +87,9 @@ class ErArray {
     }
   }
 
-  static decompress() {
+  isFull() { return this.cFilled === this.cLength; }
+
+  decompress() {
 
   }
 
@@ -125,17 +127,18 @@ class Message {
     this.offset = 0;
   }
 
-  hasArray() {
-    return ErArray.isComplete(this.dv, this.offset);
-  }
-
   popArray() {
+    if (this.offset === this.dv.byteLength) return null;
     const arr = new ErArray(this.dv, this.offset);
-    this.offset += arr.compressedLength;
+    this.offset += arr.cFilled;
+    return arr;
   }
 
-  /** Returns next `maxLength` bytes or as many as available in this message */
-  popBytes(maxLength) {
+  /** Fills remaining bytes in the given array as much as possible */
+  fillArray(array) {
+    if (array.isFull) throw new Error('Array already full');
+
+
     const howMany = Math.min(this.dv.byteLength - this.offset, maxLength);
     const bytes = new Uint8Array(this.dv.buffer, this.offset, length);
     this.offset += howMany;
@@ -144,10 +147,6 @@ class Message {
 
   isEmpty() {
     return this.offset === this.dv.byteLength;
-  }
-
-  asArray(length) {
-    return new Uint8Array(this.dv.buffer, this.offset, length);
   }
 }
 
@@ -251,14 +250,13 @@ class Serializer {
 
   deserialize(newMsgEvt) {
     const msg = new Message(newMsgEvt.data);
-    if (!this.array)             this.array = new ErArray(msg);
-    else if (!this.array.isFull) this.array.fill(msg);
-
+    if (!this.array)  this.array = msg.popArray();
+    else              msg.fillArray(this.array);
 
     // consume -- pop as many arrays as possible from the rest of the message
-    while (this.array.isFull && !msg.isEmpty()) {
+    while (this.array && this.array.isFull) {
       this.dataReceiverCb(this.array);
-      this.array = new ErArray(msg);
+      this.array = msg.popArray();
     }
   }
 }
