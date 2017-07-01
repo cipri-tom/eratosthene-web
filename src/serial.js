@@ -1,8 +1,5 @@
 /* global Util */
 
-import { Address } from './address';
-import Queue from '../lib/Queue'
-
 /** Similar to the default getUint32 but it is always in little endian */
 DataView.prototype.getUint32LE = function dvGetUint32LE(offset) {
   return this.getUint32(offset, true);
@@ -48,66 +45,74 @@ function num2bytes(num) {
 }
 
 
-/** Lowest level interface, right above the network socket, to serialise data to/from the server
- * This is always :
- * | uint64 vsize | uint64 csize | uint8[] bytes |
- * @constructor
- *
- * @param (string) type: 'AGREE', 'ADDR_SINGLE', 'ADDR_MULTI', 'CELL'
+/** Representation of raw data, as it comes in the socket: an array with a header.
+ * ```
+ *  <------------------- HEADER ----------------> <---- DATA ---->
+ * | uint64: vsize | uint64: csize | uint8: mode | uint8[]: bytes |
+ * ```
  */
 class ErArray {
+  /** Creates an empty array from the header bytes.
+   * @param {!DataView} dv - View over the buffer containing this array header
+   * @param {?number} [offset=0] - Offset in the above view, where the header starts
+   */
   constructor(dv, offset) {
+    offset = offset || 0;
+    if (!(dv instanceof DataView)) throw new Error('Invalid parameter type for ErArray constructor')
+
     if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new Error('Cannot build ErArray: incomplete header');
+
+    /** The compressed size of the array i.e. the number of bytes coming on the network after the header
+     * @type {number} */
     this.cLength = dv.getUint64LE(offset);
-    this.length = dv.getUint64LE(offset + 8);
 
-    const bytesAvailable = dv.byteLength - offset - ErArray.ARRAY_HEADER;
-    if (this.cLength <= bytesAvailable) {
-      this.cFilled = this.cLength;
-      const cBytes = new Uint8Array(dv.buffer, offset + ErArray.ARRAY_HEADER, this.cLength);
-      this.decompress(cBytes);
-    } else {
-      this.cBytes = new Uint8Array(this.cLength);
-      this.cBytes.set(new Uint8Array(dv.buffer, offset + ErArray.ARRAY_HEADER));  // with everything remaining
-      this.cFilled = bytesAvailable;
-    }
+    /** How many bytes have been filled. Initially `0`, up to {@link ErArray#cLength}
+     * @type {number} */
+    this.cFilled = 0;
+
+    /** Actual array length, after decompression
+     * @type {number} */
+    this.length  = dv.getUint64LE(offset + 8);
+
+    /** The bytes of the compressed array. Released after decompression
+     * @private */
+    this.cBytes = null;
   }
 
-  fill(msg) {
+  /** How many bytes still need to be received into this array
+   * @type {number} */
+  get neededBytes() { return this.cLength - this.cFilled; }
+
+  /** Indicates that all bytes have been received
+   * @type {boolean} */
+  get isFull() { return this.cFilled === this.cLength; }
+
+  /** Appends the given bytes to this array and decompresses it if it becomes full.
+   * @param {Uint8Array} bytes - the bytes to add to this array */
+  addBytes(bytes) {
     if (this.isFull) throw new Error('Array already full');
-    const newBytes = msg.popBytes(this.cLength - this.cFilled);
-    this.cBytes.set(newBytes, this.cFilled);
-    this.cFilled += newBytes.length;
-
-    if (this.cFilled === this.cLength) {
-      this.bytes = ErArray.decompress(new DataView(this.cBytes.buffer), 0);
-      this.isFull = true;
-      delete this.cBytes;
-      delete this.cFilled;
+    if (bytes.byteLength === this.cLength) {
+      // the whole array fit in bytes, we can decompress directly without copying
+      this.decompress(bytes);
+      this.cFilled = this.cLength;  // it is full
+      return;
     }
+
+    if (!this.cBytes) this.cBytes = new Uint8Array(this.cLength);
+    this.cBytes.set(bytes, this.cFilled);
+    this.cFilled += bytes.byteLength;
+
+    if (this.isFull) this.decompress(this.cBytes);
   }
 
-  isFull() { return this.cFilled === this.cLength; }
-
-  decompress() {
-
+  decompress(bytes) {
+    throw new Error('NYI');
   }
-
-  // isComplete(dv, offset) {
-  //   return dv.getUint64LE(offset) <= dv.byteLength - offset - ErArray.ARRAY_HEADER;
-  // }
 }
-Object.defineProperties(ErArray.prototype, {
-  compressedLength: {
-    get() { return this.cLength + ErArray.ARRAY_HEADER; },
-    set() { throw new Error('Cannot set read-only property'); },
-  },
-});
 
-
-ErArray.ARRAY_SIZE_STEP = 1048576;  // increase in 1 Mb steps
 ErArray.ARRAY_HEADER_SIZES = 2 * 8; // 2 * uint64 (vsize, csize)
 ErArray.ARRAY_HEADER_MODE = 1;     // uint8 for mode
+/** How much space the header takes */
 ErArray.ARRAY_HEADER = ErArray.ARRAY_HEADER_SIZES + ErArray.ARRAY_HEADER_MODE;
 
 
@@ -127,42 +132,39 @@ class Message {
     this.offset = 0;
   }
 
+  get length() {
+    return this.dv.byteLength - this.offset;
+  }
+
   popArray() {
     if (this.offset === this.dv.byteLength) return null;
     const arr = new ErArray(this.dv, this.offset);
+    this.fillArray(arr);
     this.offset += arr.cFilled;
+    return arr;
+  }
+
+  popBytes(length) {
+    length = length || this.length;
+    if (length > this.length) throw new Error('Cannot pop more bytes than existing');
+    const arr = new Uint8Array(this.dv.buffer, this.offset, length);
+    this.offset += length;
     return arr;
   }
 
   /** Fills remaining bytes in the given array as much as possible */
   fillArray(array) {
-    if (array.isFull) throw new Error('Array already full');
-
-
-    const howMany = Math.min(this.dv.byteLength - this.offset, maxLength);
-    const bytes = new Uint8Array(this.dv.buffer, this.offset, length);
-    this.offset += howMany;
-    return bytes;
-  }
-
-  isEmpty() {
-    return this.offset === this.dv.byteLength;
+    const howMany = Math.min(this.length, array.neededBytes);
+    const bytes = this.popBytes(howMany);
+    array.addBytes(bytes);
   }
 }
-
-Object.defineProperties(Message.prototype, {
-  length: {
-    get() { return this.dv.byteLength - this.offset; },
-    set() { throw new Error('Cannot set read-only length of Message'); },
-  },
-});
-
 
 class Serializer {
   constructor() {
     this.socket = null;
     this.dataReceiverCb = null;
-    this.array = null;
+    this.prevMsg = null;
   }
 
   /** Establishes an authenticated connection to the server and sets up further message exchanges */
@@ -250,8 +252,21 @@ class Serializer {
 
   deserialize(newMsgEvt) {
     const msg = new Message(newMsgEvt.data);
-    if (!this.array)  this.array = msg.popArray();
-    else              msg.fillArray(this.array);
+    if (this.prevMsg) {
+      // having a previous message means that we couldn't construct an array from it
+      // because it didn't contain the whole array header
+      if (this.array) throw new Error('Cannot have both a prevMsg and a prevArray');
+
+      const headerBytes = new Uint8Array(ErArray.ARRAY_HEADER);
+      const numInPrev = this.prevMsg.length;
+      const numInCurr = ErArray.ARRAY_HEADER - numInPrev;
+      headerBytes.set(this.prevMsg.popBytes(numInPrev), 0);
+      headerBytes.set(msg.popBytes(numInCurr), numInPrev);
+      this.array = new ErArray(new DataView(headerBytes.buffer));
+    }
+
+    if (this.array) msg.fillArray(this.array);    // leftover array, need to fill it
+    else            this.array = msg.popArray();  // no leftovers, start a new one
 
     // consume -- pop as many arrays as possible from the rest of the message
     while (this.array && this.array.isFull) {
