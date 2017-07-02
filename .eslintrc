@@ -3,9 +3,9 @@
     "parser": "babel-eslint",
     "parserOptions": {
       "ecmaVersion": 6,
-      "sourceType": "script",
+      "sourceType": "module",
       "ecmaFeatures": {
-        "impliedStrict": true
+        "impliedStrict": false
       }
     },
     "rules": {
@@ -13,7 +13,10 @@
       "no-multi-assign": "warn",
       "no-bitwise": "off",
       "no-plusplus": ["error", { "allowForLoopAfterthoughts": true }],
-      "max-len": ["error", 120]
+      "max-len": ["error", 120],
+      "no-mixed-operators": "off",
+      "no-continue": "off",
+      "no-multi-spaces": "off"
     },
     "env" : {
       "browser": true,
