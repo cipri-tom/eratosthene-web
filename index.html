@@ -5,25 +5,33 @@
     <meta content="utf-8" http-equiv="encoding">
 
     <title>Eratosthene Prototype Web client</title>
-    <script type="text/javascript" src="./include/util.js"></script>
-    <script type="text/javascript" src="./include/webutil.js"></script>
-    <script type="text/javascript" src="./include/dat.gui.min.js"></script>
-    <script type="text/javascript" src="./include/three.min.js"></script>
-    <script type="text/javascript" src="./include/TrackballControls.js"></script>
-    <script type="text/javascript" src="./include/OrbitControls.js"></script>
+    <script type="text/javascript" src="lib/util.js"></script>
+    <script type="text/javascript" src="lib/webutil.js"></script>
+    <!--<script type="text/javascript" src="lib/dat.gui.min.js"></script>-->
+    <!--<script type="text/javascript" src="lib/three.min.js"></script>-->
+    <!--<script type="text/javascript" src="lib/TrackballControls.js"></script>-->
+    <!--<script type="text/javascript" src="lib/OrbitControls.js"></script>-->
 
-    <script type="text/javascript" src="./include/websock.js"></script>
-    <script type="text/javascript" src="./address.js"></script>
-    <script type="text/javascript" src="./cell.js"></script>
-    <script type="text/javascript" src="./model.js"></script>
-    <script type="text/javascript" src="./client.js"></script>
+    <!--<script type="text/javascript" src="/serial.js"></script>-->
+    <!--<script type="text/javascript" src="/address.js"></script>-->
+    <!--<script type="text/javascript" src="/cell.js"></script>-->
+    <!--<script type="text/javascript" src="/model.js"></script>-->
+    <!--<script type="text/javascript" src="/client.js"></script>-->
+
+    <script type="text/javascript" src="build/eratosthene.js"></script>
+    <script type="text/javascript">
+        document.addEventListener("DOMContentLoaded", function launchApp() {
+          let client = new Client('le_canvas');
+        })
+    </script>
+
 </head>
 <body>
     <canvas id="le_canvas"></canvas>
     <br/>
     <input type="button" value="Render" onclick="render()">
     <input type="button" value="Fill"   onclick="model.fill()">
-    <input type="checkbox" id="auto_fill" checked>Fill on change</input>
+    <input type="checkbox" id="autoFill" checked>Fill on change</input>
     <div>
         <h2>Big tiles: </h2>
         <input type="text" id="big1" value="/950486422/1220011/1" autofocus>

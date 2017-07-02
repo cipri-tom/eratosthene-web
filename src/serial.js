@@ -1,3 +1,4 @@
+import Address from './address';
 /* global Util */
 
 /** Similar to the default getUint32 but it is always in little endian */
@@ -13,6 +14,8 @@ DataView.prototype.getUint64LE = function dvGetUint64LE(offset) {
     throw new Error('Cannot extract uint64 safely');
   return result;
 };
+
+
 
 /** Expands `num` into a list of bytes */
 function num2bytes(num) {
@@ -55,14 +58,16 @@ class ErArray {
   /** Creates an empty array from the header bytes.
    * @param {!DataView} dv - View over the buffer containing this array header
    * @param {?number} [offset=0] - Offset in the above view, where the header starts
+   * @throws {TypeError} when first parameter is not a DataView
+   * @throws {Error} when the indicated bytes do not form a valid header
    */
   constructor(dv, offset) {
     offset = offset || 0;
-    if (!(dv instanceof DataView)) throw new Error('Invalid parameter type for ErArray constructor')
+    if (!(dv instanceof DataView)) throw new TypeError('Invalid parameter type for ErArray constructor')
 
     if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new Error('Cannot build ErArray: incomplete header');
 
-    /** The compressed size of the array i.e. the number of bytes coming on the network after the header
+    /** The compressed size of the array == the number of bytes coming on the network after the header
      * @type {number} */
     this.cLength = dv.getUint64LE(offset);
 
@@ -106,7 +111,8 @@ class ErArray {
   }
 
   decompress(bytes) {
-    throw new Error('NYI');
+    // TODO
+    this.bytes = bytes;
   }
 }
 
@@ -126,22 +132,42 @@ const NETWORK = {
   MODE: { AUTH: 0x01 },
 };
 
+/** Represents a message arrived over the socket and presents an interface for extracting {@link ErArray} from it */
 class Message {
+  /** @param {ArrayBuffer} buffer - The bytes of this message. Parsing will begin at offset 0 */
   constructor(buffer) {
+    /** Holds a DataView over the bytes for easy extraction of data
+     * @private
+     * @type {DataView}
+     */
     this.dv = new DataView(buffer);
+
+    /** Offset in {@link Message#dv} indicating current parse position; incremented when popping data from the message
+     * @private
+     * @type {number}
+     */
     this.offset = 0;
   }
 
+  /** How many bytes still need to be parsed
+   * @type {number} */
   get length() {
     return this.dv.byteLength - this.offset;
   }
 
+  /** Extract the next {@link ErArray}, advancing the parse state of this message
+   * @returns {ErArray|null} The next (possibly incomplete) array or `null` if it's not possible
+   * (in which case the message state is not altered) */
   popArray() {
     if (this.offset === this.dv.byteLength) return null;
-    const arr = new ErArray(this.dv, this.offset);
-    this.fillArray(arr);
-    this.offset += arr.cFilled;
-    return arr;
+    try {
+      const arr = new ErArray(this.dv, this.offset);
+      this.fillArray(arr);
+      this.offset += arr.cFilled;
+      return arr;
+    } catch (err) {  // array creation failed
+      return null;
+    }
   }
 
   popBytes(length) {
@@ -160,7 +186,7 @@ class Message {
   }
 }
 
-class Serializer {
+class Serial {
   constructor() {
     this.socket = null;
     this.dataReceiverCb = null;
@@ -169,8 +195,8 @@ class Serializer {
 
   /** Establishes an authenticated connection to the server and sets up further message exchanges */
   connect(dataReceiverCb) {
-    if (this.socket)          throw new Error('Cannot connect twice');
-    if (!this.dataReceiverCb) throw new Error('No data receiver given');
+    if (this.socket)     throw new Error('Cannot connect twice');
+    if (!dataReceiverCb) throw new Error('No data receiver given');
 
     this.dataReceiverCb = dataReceiverCb;
 
@@ -186,7 +212,7 @@ class Serializer {
         throw new Error('Connection to server failed / closed');
       };
 
-      socket.onopen = function sendAuth() {
+      socket.onopen = () => {
         // construct agreement object: 0xffff0000ffff0000  -- 8 bytes
         const buf = new ArrayBuffer(ErArray.ARRAY_HEADER + 8);
         const dv  = new DataView(buf);
@@ -209,7 +235,7 @@ class Serializer {
         socket.send(dv.buffer);
       };
 
-      socket.onmessage = function validateAuth(msg) {
+      socket.onmessage = (msg) => {
         const dv = new DataView(msg.data);
         let offset = 0;
         // extract array header
@@ -250,9 +276,24 @@ class Serializer {
     });
   }
 
+  serialize(addrs) {
+    if (addrs.length === 0) return;
+
+    // we could construct a whole ErArray and send it, but why bother copying the data over ?
+    // for now we just compute the header upfront and send each address on its own
+    // TODO: change with the above because it would possible cause less network fragmentation.
+    // It would need addr.toBytes(into ErArray, offset)
+
+    const numBytes = addrs.length * Address.BUFFER_SIZE;
+    const arrHeader = new DataView(new ArrayBuffer(numBytes));
+    // arrHeader.
+
+
+  }
+
   deserialize(newMsgEvt) {
     const msg = new Message(newMsgEvt.data);
-    if (this.prevMsg) {
+    if (this.prevMsg && this.prevMsg.length > 0) {
       // having a previous message means that we couldn't construct an array from it
       // because it didn't contain the whole array header
       if (this.array) throw new Error('Cannot have both a prevMsg and a prevArray');
@@ -261,7 +302,7 @@ class Serializer {
       const numInPrev = this.prevMsg.length;
       const numInCurr = ErArray.ARRAY_HEADER - numInPrev;
       headerBytes.set(this.prevMsg.popBytes(numInPrev), 0);
-      headerBytes.set(msg.popBytes(numInCurr), numInPrev);
+      headerBytes.set(         msg.popBytes(numInCurr), numInPrev);
       this.array = new ErArray(new DataView(headerBytes.buffer));
     }
 
@@ -273,5 +314,8 @@ class Serializer {
       this.dataReceiverCb(this.array);
       this.array = msg.popArray();
     }
+    this.prevMsg = msg;
   }
 }
+
+export default new Serial();
