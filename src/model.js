@@ -75,7 +75,28 @@ export default function Model(canvas, autoFill) {
 
     this.resetView();
 
+    const addrDv = new DataView(new ArrayBuffer(Address.BUFFER_SIZE + 17)); // array header
+    let offset = 0;
+    // write array header
+    addrDv.setInt64LE(offset, Address.BUFFER_SIZE); offset += 8;
+    addrDv.setInt64LE(offset, 0);                   offset += 8;
+    addrDv.setUint8(offset, 0x03);                  offset += 1;
 
+    // address times
+    addrDv.setInt64LE(offset, -3773779200); offset += 8;  // t0
+    addrDv.setInt64LE(offset, 0);           offset += 8;  // t1
+
+    // address descriptor
+    addrDv.setUint8(offset, 19);            offset += 1;  // size
+    addrDv.setUint8(offset,  1);            offset += 1;  // mode
+    addrDv.setUint8(offset,  8);            offset += 1;  // span
+
+    // address digits
+    const addrDigits = new Uint8Array(addrDv.buffer, offset, Address.DIGITS_SIZE);
+    addrDigits.set([1, 2, 2, 0, 0, 1, 0, 0, 2, 3, 4, 3, 3, 1, 3, 2, 4, 3, 4]);
+    console.log(new Uint8Array(addrDv.buffer));
+
+    Serial.socket.send(addrDv.buffer);
   }).catch((error) => { console.log(error); });
 
   // --- PUBLIC METHODS -----------------------------------------------------------------------------------------------
@@ -115,7 +136,7 @@ export default function Model(canvas, autoFill) {
   }
 
   function receiveData(data) {
-
+    console.log(data);
   }
 
   // we need `var` here because we want this hoisted to the top, to be able to be referenced before using

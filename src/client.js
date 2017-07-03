@@ -1,5 +1,7 @@
 import GUI from '../lib/dat.gui.module';
 import Model from './model';
+import Address from './address';
+import Serial from './serial';
 
 /* global WebUtil Cell */
 
@@ -53,3 +55,5 @@ function update(cell) {
   scene.add(points);
   render();
 }
+
+export { Address, Model, Serial };

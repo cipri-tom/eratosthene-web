@@ -7,14 +7,25 @@ DataView.prototype.getUint32LE = function dvGetUint32LE(offset) {
 };
 
 DataView.prototype.getUint64LE = function dvGetUint64LE(offset) {
-  const bytesL = this.getUint32(offset, true);
-  const bytesH = this.getUint32(offset + 4, true);
-  const result = bytesH * 4294967296.0 + bytesL;
+  const lo = this.getUint32(offset, true);
+  const hi = this.getUint32(offset + 4, true);
+  const result = hi * 4294967296.0 + lo;
   if (result > Number.MAX_SAFE_INTEGER)
     throw new Error('Cannot extract uint64 safely');
   return result;
 };
 
+DataView.prototype.setInt64LE = function dvSetInt64LE(offset, value) {
+  if (!Number.isSafeInteger(value))
+    throw new Error('Cannot set int64 safely');
+
+  let   hi = Math.floor(value / 4294967296.0);
+  const lo = value - hi * 4294967296.0;
+  if (value < 0) hi += 4294967296.0;
+
+  this.setInt32(offset    , lo, true);
+  this.setInt32(offset + 4, hi, true);
+};
 
 
 /** Expands `num` into a list of bytes */
@@ -129,7 +140,7 @@ const NETWORK = {
   PORT: 11027,
   get HOST() { return `${this.SCHEMA + this.IP}:${this.PORT}`; },
 
-  MODE: { AUTH: 0x01 },
+  MODE: { AUTH: 0x01, RESILIATE: 0x02, QUERY: 0x03 },
 };
 
 /** Represents a message arrived over the socket and presents an interface for extracting {@link ErArray} from it */
@@ -319,3 +330,4 @@ class Serial {
 }
 
 export default new Serial();
+export { num2bytes };
