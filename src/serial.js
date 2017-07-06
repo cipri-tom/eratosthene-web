@@ -28,37 +28,6 @@ DataView.prototype.setInt64LE = function dvSetInt64LE(offset, value) {
 };
 
 
-/** Expands `num` into a list of bytes */
-function num2bytes(num) {
-  /* JS does bit shifting on 32 bits :(
-  This function does it manually for numbers up to 40 bits
-  which should be enough for our purposes
-  */
-  if (Math.abs(num) >= 2 ** 40) {
-    Util.Warn('Unsafe integer, will have wrong result');
-  }
-
-  const bytes = [];
-  // do the 'unsafe' part first (> 32-bit)
-  if (num >= 0) {
-    bytes[5] = bytes[6] = bytes[7] = 0;
-  } else {
-    bytes[5] = bytes[6] = bytes[7] = 0xFF;  // negative, use 2s complement
-  }
-
-  // extract the fifth byte via simulated shift
-  bytes[4] = Math.floor(num / (2 ** 32)) & 0xFF;
-
-  // do the safe part
-  for (let i = 0; i < 4; ++i) {
-    bytes[i] = num & 0xFF;
-    num >>= 8; /* eslint no-param-reassign: "off"  */ // primitive is safe to reassign
-  }
-
-  return bytes;
-}
-
-
 /** Representation of raw data, as it comes in the socket: an array with a header.
  * ```
  *  <------------------- HEADER ----------------> <---- DATA ---->
@@ -160,7 +129,7 @@ class Message {
     this.offset = 0;
   }
 
-  /** How many bytes still need to be parsed
+  /** How many bytes are still available in this buffer (not yet parsed)
    * @type {number} */
   get length() {
     return this.dv.byteLength - this.offset;
@@ -181,18 +150,23 @@ class Message {
     }
   }
 
-  popBytes(length) {
-    length = length || this.length;
+  /** Extracts the next `count` bytes from this message (or up to `this.length`, whichever is shorter).
+   * @param {number} count - How many bytes to extract
+   * @return {Uint8Array} - The extracted bytes */
+  popBytes(count) {
+    const length  = count || this.length;
     if (length > this.length) throw new Error('Cannot pop more bytes than existing');
     const arr = new Uint8Array(this.dv.buffer, this.offset, length);
     this.offset += length;
     return arr;
   }
 
-  /** Fills remaining bytes in the given array as much as possible */
+  /** Extracts bytes from this message into the given array.
+   * Takes as many as possible or until array is full.
+   * @param {ErArray} array - Destination array */
   fillArray(array) {
-    const howMany = Math.min(this.length, array.neededBytes);
-    const bytes = this.popBytes(howMany);
+    const count = Math.min(this.length, array.neededBytes);
+    const bytes = this.popBytes(count);
     array.addBytes(bytes);
   }
 }
@@ -330,4 +304,3 @@ class Serial {
 }
 
 export default new Serial();
-export { num2bytes };
