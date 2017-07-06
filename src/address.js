@@ -1,17 +1,9 @@
-import { num2bytes } from './serial';
-/* global Util */
 
-/* the range of some dimensions is smaller, so their address space is scaled accordingly.
- * these variables define how many digits should be be skipped for each */
-const LE_ADDRESS_SYNP =  1;  // latitude (polar)
-const LE_ADDRESS_SYNA = 10;  // altitude (radial)
-const LE_USE_BASE     =  8;
+/* global Util */
 
 /* WGS84 ellipsoid parameters */
 const LE_ADDRESS_WGSA = 6378137.0;
-const LE_ADDRESS_WGSF = 298.257223563;
-
-export const EARTH_RADIUS = LE_ADDRESS_WGSA;
+const LE_ADDRESS_WGSF = 298.257223563; // eslint-disable-line no-unused-vars
 
 /* ellipsoidal coordinates boundaries */
 const LE_ADDRESS_MINL = -Math.PI;
@@ -26,9 +18,9 @@ const LE_ADDRESS_RANL = LE_ADDRESS_MAXL - LE_ADDRESS_MINL;
 const LE_ADDRESS_RANA = LE_ADDRESS_MAXA - LE_ADDRESS_MINA;
 const LE_ADDRESS_RANH = LE_ADDRESS_MAXH - LE_ADDRESS_MINH;
 
-export default function Address(addrStr) {
+export function Address(addrStr) {
   // fields
-  this.mode = this.depth = this.time_0 = this.time_1 = 0;
+  this.mode = this.span = 0;
   this.digits = [];
 
   // construct from string -- "/mode/t0,t1/d1d2d3...dn/span"
@@ -40,8 +32,8 @@ export default function Address(addrStr) {
     }
 
     this.mode   = parseInt(parts[1], 10);
-    this.depth  = parseInt(parts[4], 10);
-    this.times  = parts[2].split(',').map(Number);
+    this.span  = parseInt(parts[4], 10);
+    this.time  = parts[2].split(',').map(Number);
     this.digits = parts[3].split('').map(Number);
   }
 }
@@ -56,7 +48,8 @@ Object.defineProperties(Address.prototype, {
   pose: {
     set() { Util.Warn('Ignoring assignment to address pose.'); },
     /** Extracts the pose at this address, in polar coordinates.
-     This works by reconstructing the three float64 numbers from the bits of `digits` */
+     This works by reconstructing the three float64 numbers from the bits of `digits`
+     NOTE: altitude is normalised to earth radius */
     get() {
       const pose = [0.0, 0.0, 0.0];  // [lon, lat, rad]
       const bitp = [1.0, 1.0, 1.0];  // position of the bit being set (as a bit in the mantissa)
@@ -78,88 +71,69 @@ Object.defineProperties(Address.prototype, {
       // denormalise the coordinates
       pose[0] = LE_ADDRESS_MINL + pose[0] * LE_ADDRESS_RANL;
       pose[1] = LE_ADDRESS_MINA + pose[1] * LE_ADDRESS_RANA;
-      pose[2] = LE_ADDRESS_MINH + pose[2] * LE_ADDRESS_RANH;
+      pose[2] = LE_ADDRESS_MINH + pose[2] * LE_ADDRESS_RANH + LE_ADDRESS_WGSA;  // add earth radius
 
       return pose;
     },
   },
 });
 
-/**  Returns 1 + the maximum digit that can be allowed at the given index.
- This is variable because some dimensions have larger ranges
- NOTE: adds 1 because it should be used as `for` condition (where "<" is nicer than "<=")
- */
-Address.maxDigit = function maxDigit(idx) {
-  if (idx < LE_ADDRESS_SYNP) return LE_USE_BASE >> 2; // can only cut in longitude -> base 2
-  if (idx < LE_ADDRESS_SYNA) return LE_USE_BASE >> 1; // can only cut in (lon,lat) -> base 4
-  return LE_USE_BASE;                                 // can cut all (lon,lat,alt) -> base 8
+
+/** Maximum value for a scale */
+const MAX_SCALE_VALUE  =  7;
+
+/** This parameter defines at what scale we start subdividing the latitude,
+ * because its range is smaller than that of longitude */
+const LE_ADDRESS_SYNP =  1;  // latitude (polar)
+
+/** This parameter defines at what scale we start subdividing the altitude,
+ * because its range is smaller than that of longitude and latitude */
+const LE_ADDRESS_SYNA = 10;  // altitude (radial)
+
+/**  Returns 1 + the maximum scale that can be allowed at the given index.
+ NOTE: adds 1 because it should be used as `for` condition (where `<` is nicer than `<=`) */
+Address.maxValue = function addrMaxValue(scale) {
+  if (scale < LE_ADDRESS_SYNP) return 1 + (MAX_SCALE_VALUE >> 2); // can only cut in longitude -> base 2
+  if (scale < LE_ADDRESS_SYNA) return 1 + (MAX_SCALE_VALUE >> 1); // can only cut in (lon,lat) -> base 4
+  return 1 + MAX_SCALE_VALUE;                                     // can cut all (lon,lat,alt) -> base 8
 };
 
-Address.TIME_SIZE   = 2 * 8;   //  2 * uint64 times
-Address.DESC_SIZE   = 3;       // mode: uint8; digits_size: uint8; depth: uint8;
+Address.TIME_SIZE   = 2 * 8;   //  2 * uint64 time
+Address.DESC_SIZE   = 3;       // mode: uint8; digits_size: uint8; span: uint8;
 Address.DIGITS_SIZE = 40;      // 40 * uint8  digits (LE_BUFFER_ADDR)
 Address.BUFFER_SIZE = Address.TIME_SIZE + Address.DESC_SIZE + Address.DIGITS_SIZE;
 
 // the order in which they are encountered in the buffer:
-//      times; size; mode; span; digits
+//      time; size; mode; span; digits
 Address.TIME_OFFSET   = 0;
 Address.SIZE_OFFSET   = Address.TIME_OFFSET + Address.TIME_SIZE;
 Address.MODE_OFFSET   = Address.SIZE_OFFSET + 8;  // addressSize: uint64 -> 8 bytes
 Address.SPAN_OFFSET   = Address.MODE_OFFSET + 1;  // addressMode: uint8  -> 1 byte
 Address.DIGITS_OFFSET = Address.SPAN_OFFSET + 1;  // addressSpan: uint8  -> 1 byte
 
-/** CLASS method returning the specified time from a DataView object */
-Address.extractTime = function extractTime(dv, which = 0, offset = 0) {
-  // Each time is uint64 so we need 2 int32 => possibly lossy
-  const highBytes = dv.getInt32(offset + Address.TIME_OFFSET + which * 8    , true);
-  const lowBytes  = dv.getInt32(offset + Address.TIME_OFFSET + which * 8 + 4, true);
-  return highBytes * 4294967296.0 + lowBytes;
-};
 
+/** Converts this address to a stream of bytes to be sent on the network */
+Address.prototype.toBytes = function addrToBytes() {
+  const addrDv = new DataView(Address.BUFFER_SIZE);
+  let offset = 0;
+  addrDv.setInt64LE(offset, this.time[0]);  offset += 8;
+  addrDv.setInt64LE(offset, this.time[1]);  offset += 8;
+  addrDv.setUint8  (offset, this.size);     offset += 1;
+  addrDv.setUint8  (offset, this.mode);     offset += 1;
+  addrDv.setUint8  (offset, this.span);     offset += 1;
 
-/** CLASS method returning a new address from bytes */
-Address.fromBytes = function addrFromBytes(bytes) {
-    let addr = new Address;
-    var dv   = new DataView(new Uint8Array(bytes).buffer);
+  const digitsView = new Uint8Array(addrDv.buffer, offset, this.size);
+  digitsView.set(this.digits);  // everything up to Address.BUFFER_SIZE remains zero
 
-    // extract properties -- size, mode, depth
-    addr.depth = dv.getUint8(Address.SPAN_OFFSET);
-    addr.mode  = dv.getUint8(Address.MODE_OFFSET);
-    var size   = dv.getUint8(Address.SIZE_OFFSET);  // can't set it
-
-    // extract digits
-    while (size > 0)
-        addr.digits[--size] = dv.getUint8(size);
-
-    // extract times
-    addr.time_0 = this.extractTime(dv, 0);
-    addr.time_1 = this.extractTime(dv, 1);
-
-    return addr;
-};
-
-
-Address.prototype.to_bytes = function() {
-    /** Converts this address to a stream of bytes to be sent on the network */
-    var bytes = this.digits.slice();                // each digit is a byte
-    // complete the rest of the digits with zeros
-    for (var i = bytes.length; i < Address.DIGITS_SIZE; ++i)
-        bytes[i] = 0;
-
-    bytes = bytes.concat(num2bytes(this.time_0));   // 8 bytes
-    bytes = bytes.concat(num2bytes(this.time_1));   // 8 bytes
-    bytes.push(this.size, this.mode, this.depth);   // 1 byte each
-    return bytes;
+  return addrDv.buffer;
 }
 
 Address.prototype.clone = function cloneAddr() {
-  const other  = new Address();
-  other.mode   = this.mode;
-  other.depth  = this.depth;
-  other.time_0 = this.time_0;
-  other.time_1 = this.time_1;
-  const size   = this.size;
-  for (let i = 0; i < size; ++i) {
+  const other = new Address();
+  other.mode = this.mode;
+  other.span = this.span;
+  other.time = this.time.slice();
+  for (let i = 0, size = this.size; i < size; ++i) {
     other.digits[i] = this.digits[i];
   }
   return other;
@@ -168,7 +142,10 @@ Address.prototype.clone = function cloneAddr() {
 Address.prototype.toString = function addrToString() {
   /* eslint prefer-template: off */
   return '/' + this.mode
-      +  '/' + this.time_0 + ',' + this.time_1
+      +  '/' + this.time[0] + ',' + this.time[1]
       +  '/' + this.digits.join('')
-      +  '/' + this.depth;
+      +  '/' + this.span;
 };
+
+const EARTH = { RADIUS: LE_ADDRESS_WGSA, RANGE_LON: LE_ADDRESS_RANL };
+export { EARTH, MAX_SCALE_VALUE  };

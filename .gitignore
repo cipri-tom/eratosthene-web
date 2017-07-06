@@ -5,3 +5,5 @@
 build/
 docs/
 node_modules/
+/lib/three.modules.js
+
