@@ -5,7 +5,8 @@ import {
   WebGLRenderer, Scene, PerspectiveCamera,
   PointsMaterial, LineBasicMaterial,
   EdgesGeometry, SphereBufferGeometry, LineSegments,
-  VertexColors }
+  VertexColors,
+}
   from '../lib/three.modules';
 import OrbitControls from '../lib/OrbitControls';
 
@@ -31,6 +32,9 @@ export default function Model(canvas, autoFill) {
   // TODO set size from parameters
   this.viewWidth = 800;
   this.viewHeight = 640;
+
+  this.timeMode = 1;   // TODO: define a constant somewhere TIME_MODES (values and buttons, maybe)
+  this.time = [950486422, 0];
 
   const renderer = new WebGLRenderer({ canvas, logarithmicDepthBuffer: true });
   renderer.setSize(this.viewWidth, this.viewHeight);
@@ -58,8 +62,8 @@ export default function Model(canvas, autoFill) {
     enableZoom: true,
     enablePan: true,
     enableKeys: false,
-    minDistance: EARTH_RADIUS - 10000,
-    maxDistance: EARTH_RADIUS + 10000,
+    minDistance: EARTH.RADIUS - 10000,
+    maxDistance: EARTH.RADIUS + 10000,
   });
   // this.controls = controls;
 
@@ -69,7 +73,7 @@ export default function Model(canvas, autoFill) {
     this.spaceParam = result.spaceParam;
     this.timeParam  = result.timeParam;
 
-    controls.addEventListener('end', handleUpdate);
+    controls.addEventListener('end', update);
     controls.addEventListener('change', this.render.bind(this));
 
     this.resetView();
@@ -101,16 +105,13 @@ export default function Model(canvas, autoFill) {
   // --- PUBLIC METHODS -----------------------------------------------------------------------------------------------
 
   /** Exposed function to "jump" to the given coordinates (cartesian)
-   * @param {?number[]} coords - The [x, y, z] in absolute values. If not given, sets to default view */
-  this.setView = (coords) => {
-    if (!coords) {
-      // set to default view
-    } else {
-      camera.position.set(...coords);
-    }
-    // TODO update this.viewPose = cartesianToSpherical(coords)
+   * @param {!number[]} coords - The [x, y, z] in absolute values. If not given, sets to default view
+   * @param {!number[]} [lookAtTarget=[0,0,0]] - The [x, y, z] in absolute values of a point to look at */
+  this.setView = (coords, lookAtTarget) => {
+    camera.position.set(...coords);
+    camera.lookAt(lookAtTarget || [0,0,0]);
     // no need to update the controls
-    // this.update();
+    update();
   };
 
   /** Sets the view to a default position */
@@ -118,10 +119,6 @@ export default function Model(canvas, autoFill) {
     this.setView(defaultView);
   };
 
-  this.shouldAutoFill = (value) => {
-    this.autoFill = value;
-  };
-  
   this.render = () => {
     renderer.render(scene, camera);
   };
@@ -129,7 +126,7 @@ export default function Model(canvas, autoFill) {
   // --- INTERNALS ----------------------------------------------------------------------------------------------------
   function buildEarth() {
     const mat        = new LineBasicMaterial({ color: 0x208820, linewidth: 2 });
-    const earth      = new SphereBufferGeometry(EARTH_RADIUS, 24, 30);  // FIXME make sure EARTH_RADIUS is defined
+    const earth      = new SphereBufferGeometry(EARTH.RADIUS, 24, 30);
     const earthEdges = new EdgesGeometry(earth);
     return new LineSegments(earthEdges, mat);  // wireframe
   }
@@ -180,30 +177,30 @@ export default function Model(canvas, autoFill) {
 
     // finished with this scale, backtrack
     addr.digits.pop();
+  };
+
+  let numReceived = 0;
+  function receiveData(data) {
+    console.log(`Cell ${numReceived} received! Len: ${data.length}`);
+    numReceived++;
   }
 
-  function receiveData(data) {
-    console.log(data);
+  const getSeedAddr = () => {
+    const addr = new Address();
+    addr.mode  = this.timeMode;
+    addr.time  = this.time.slice();
+    return addr;
   }
 
   // we need `var` here because we want this hoisted to the top, to be able to be referenced before using
-  // and we don't want to use `function handleUpdate` because of problems with referencing `this`
+  // and we don't want to use `function update` because of problems with referencing `this`
   // eslint-disable-next-line vars-on-top, no-var
-  var handleUpdate = (evt) => {
-    // only on 'end', which is emitted by Controls
-    if (evt.type !== 'end') return;
-
-    // update viewPose
-    viewPose[0] = controls.getAzimuthalAngle();                // longitude -- around y axis
-    viewPose[1] = Math.PI / 2 - controls.getPolarAngle();      // latitude  -- around x axis
-    viewPose[2] = controls.object.position.length();
-
+  var update = () => {
     // TODO: adjust controls params
 
     if (this.autoFill) {
-      const newAddrs = Address.generate(this, this.seedAddr, 0);
-      Serial.serialize(newAddrs);
+      getViewableAddrs(getSeedAddr(), 0);
+      Serial.serialize(toQuery);
     }
   };
-
 }
