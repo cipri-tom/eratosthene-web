@@ -1,4 +1,4 @@
-
+import { Vector3 } from '../lib/three.modules';
 /* global Util */
 
 /* WGS84 ellipsoid parameters */
@@ -20,7 +20,9 @@ const LE_ADDRESS_RANH = LE_ADDRESS_MAXH - LE_ADDRESS_MINH;
 
 export function Address(addrStr) {
   // fields
-  this.mode = this.span = 0;
+  this.mode = 0;
+  this.span = MAX_SCALE_VALUE;
+  this.time = [];
   this.digits = [];
 
   // construct from string -- "/mode/t0,t1/d1d2d3...dn/span"
@@ -31,52 +33,12 @@ export function Address(addrStr) {
       throw new Error(`Invalid address ${addrStr}`);
     }
 
-    this.mode   = parseInt(parts[1], 10);
-    this.span  = parseInt(parts[4], 10);
-    this.time  = parts[2].split(',').map(Number);
+    this.mode = parseInt(parts[1], 10);
+    this.span = parseInt(parts[4], 10);
+    this.time = parts[2].split(',').map(Number);
     this.digits = parts[3].split('').map(Number);
   }
 }
-
-
-Object.defineProperties(Address.prototype, {
-  size: {
-    set() { Util.Warn('Ignoring assignment to address size.'); },
-    get() { return this.digits.length; },
-  },
-
-  pose: {
-    set() { Util.Warn('Ignoring assignment to address pose.'); },
-    /** Extracts the pose at this address, in polar coordinates.
-     This works by reconstructing the three float64 numbers from the bits of `digits`
-     NOTE: altitude is normalised to earth radius */
-    get() {
-      const pose = [0.0, 0.0, 0.0];  // [lon, lat, rad]
-      const bitp = [1.0, 1.0, 1.0];  // position of the bit being set (as a bit in the mantissa)
-      const size = this.size;
-      for (let i = 0; i < size; ++i) {
-        // extract and accumulate longitude information from this digit
-        bitp[0] *= 0.5;                        // advance the bit being set
-        pose[0] +=  (this.digits[i] & 0x01      ) * bitp[0];  // set that bit
-
-        if (i < LE_ADDRESS_SYNP) continue;     // skip unused dimension
-        bitp[1] *= 0.5;
-        pose[1] += ((this.digits[i] & 0x02) >> 1) * bitp[1];
-
-        if (i < LE_ADDRESS_SYNA) continue;     // skip unused dimension
-        bitp[2] *= 0.5;
-        pose[2] += ((this.digits[i] & 0x04) >> 2) * bitp[2];
-      }
-
-      // denormalise the coordinates
-      pose[0] = LE_ADDRESS_MINL + pose[0] * LE_ADDRESS_RANL;
-      pose[1] = LE_ADDRESS_MINA + pose[1] * LE_ADDRESS_RANA;
-      pose[2] = LE_ADDRESS_MINH + pose[2] * LE_ADDRESS_RANH + LE_ADDRESS_WGSA;  // add earth radius
-
-      return pose;
-    },
-  },
-});
 
 
 /** Maximum value for a scale */
@@ -114,7 +76,7 @@ Address.DIGITS_OFFSET = Address.SPAN_OFFSET + 1;  // addressSpan: uint8  -> 1 by
 
 /** Converts this address to a stream of bytes to be sent on the network */
 Address.prototype.toBytes = function addrToBytes() {
-  const addrDv = new DataView(Address.BUFFER_SIZE);
+  const addrDv = new DataView(new ArrayBuffer(Address.BUFFER_SIZE));
   let offset = 0;
   addrDv.setInt64LE(offset, this.time[0]);  offset += 8;
   addrDv.setInt64LE(offset, this.time[1]);  offset += 8;
@@ -126,7 +88,7 @@ Address.prototype.toBytes = function addrToBytes() {
   digitsView.set(this.digits);  // everything up to Address.BUFFER_SIZE remains zero
 
   return addrDv.buffer;
-}
+};
 
 Address.prototype.clone = function cloneAddr() {
   const other = new Address();
@@ -147,5 +109,59 @@ Address.prototype.toString = function addrToString() {
       +  '/' + this.span;
 };
 
+Object.defineProperties(Address.prototype, {
+  size: {
+    set() { Util.Warn('Ignoring assignment to address size.'); },
+    get() { return this.digits.length; },
+  },
+
+  poseCentre: {
+    set() { Util.Warn('Ignoring assignment to address pose.'); },
+    /** Extracts the pose at this address, in cartesian coordinates.
+     This works by reconstructing the three float64 numbers from the bits of `digits`
+     NOTE: altitude is normalised to earth radius
+     NOTE: while the address points to the "edge" of a cell, the pose returned is that of the "center" */
+    get() {
+      const pose = [0.0, 0.0, 0.0];  // [lon, lat, rad]
+      const bitp = [1.0, 1.0, 1.0];  // position of the bit being set (as a bit in the mantissa)
+      const size = this.size;
+      for (let i = 0; i < size; ++i) {
+        // extract and accumulate longitude information from this digit
+        bitp[0] *= 0.5;                        // advance the bit being set
+        pose[0] +=  (this.digits[i] & 0x01      ) * bitp[0];  // set that bit
+
+        if (i < LE_ADDRESS_SYNP) continue;     // skip unused dimension
+        bitp[1] *= 0.5;
+        pose[1] += ((this.digits[i] & 0x02) >> 1) * bitp[1];
+
+        if (i < LE_ADDRESS_SYNA) continue;     // skip unused dimension
+        bitp[2] *= 0.5;
+        pose[2] += ((this.digits[i] & 0x04) >> 2) * bitp[2];
+      }
+
+      // denormalise the coordinates
+      pose[0]  = LE_ADDRESS_MINL + pose[0] * LE_ADDRESS_RANL;                     // lon
+      pose[1]  = LE_ADDRESS_MINA + pose[1] * LE_ADDRESS_RANA;                     // lat
+      pose[2]  = LE_ADDRESS_MINH + pose[2] * LE_ADDRESS_RANH + LE_ADDRESS_WGSA;   // alt (with earth radius)
+
+      // shift to the cell centre (in spherical coords)
+      const scale = 1 << (this.size + 1);
+      const shift = LE_ADDRESS_RANL / scale;
+      pose[0] += shift;
+      pose[1] += shift;
+      pose[2] += 2 * Math.PI * LE_ADDRESS_WGSA / scale;
+
+      // change to cartesian coordinates
+      const cart = [0, 0, 0];
+      cart[0] = pose[2] * Math.cos(pose[1]) * Math.sin(pose[0]); // x
+      cart[1] = pose[2] * Math.sin(pose[1]);                     // y
+      cart[2] = pose[2] * Math.cos(pose[1]) * Math.cos(pose[0]); // z
+
+      return new Vector3(...cart);
+    },
+  },
+});
+
 const EARTH = { RADIUS: LE_ADDRESS_WGSA, RANGE_LON: LE_ADDRESS_RANL };
 export { EARTH, MAX_SCALE_VALUE  };
+export default Address;

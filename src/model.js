@@ -64,8 +64,6 @@ export default function Model(canvas, autoFill) {
   // this.controls = controls;
 
 
-  let viewPose = [0, 0, 0];     // lon, lat, alt
-
   Serial.connect(receiveData).then((result) => {
     // everything is OK, proceed with setup
     this.spaceParam = result.spaceParam;
@@ -136,18 +134,18 @@ export default function Model(canvas, autoFill) {
     return new LineSegments(earthEdges, mat);  // wireframe
   }
 
+
   const cache = {};       // cache[addr] = CellObject when the cell is available and rendered
-  const toQuery = [];   // list of generated addrs
-  const seedAddr = new Address('/1/950486422,950486422//7'); // FIXME: from er_view_get_times
-  function getViewableAddrs(addr, scale) {
+  const toQuery = [];     // list of generated addrs
+  const getViewableAddrs = (addr, scale) => {
     // create new slot
     addr.digits.push(0);
     if (addr.size !== scale + 1) {
-      Util.Warn("Inconsistent address generation");
+      Util.Warn('Inconsistent address generation');
     }
 
     // iterate through all the possible digits that can appear at `scale`
-    let maxDigit = Address.maxValue(scale);
+    const maxDigit = Address.maxValue(scale);
     for (let digit = 0; digit < maxDigit; ++digit) {
       // update address with this digit
       addr.digits[scale] = digit;
@@ -158,14 +156,14 @@ export default function Model(canvas, autoFill) {
       }
 
       // TODO: check negative distance (sometimes)(due to wrong `lat` angle in `viewPose`)
-      const dist = Geo.distance(addr, viewPose);
+      const dist = camera.position.distanceTo(addr.poseCentre);
 
       // generate unconditionally for the first 3 levels
       if (scale <= UNCONDITIONAL_SCALE_EXPANSION) {
         getViewableAddrs(addr, scale + 1);
 
       // for higher levels, it must be close enough:
-      } else if (dist < Geo.distanceThreshold(viewPose[2])) {
+      } else if (dist < Geo.distanceThreshold(camera.position.length())) {
         // and have enough detail at this scale
         if (Geo.enoughDetail(dist, this.spaceParam, scale)) {
           if (!cache[addr]) {
