@@ -1,4 +1,4 @@
-import Address from './address';
+import { Address } from './address';
 /* global Util */
 
 /** Similar to the default getUint32 but it is always in little endian */
@@ -142,10 +142,12 @@ class Message {
     if (this.offset === this.dv.byteLength) return null;
     try {
       const arr = new ErArray(this.dv, this.offset);
+      this.offset += ErArray.ARRAY_HEADER;
+
       this.fillArray(arr);
-      this.offset += arr.cFilled;
       return arr;
     } catch (err) {  // array creation failed
+      if (this.length >= ErArray.ARRAY_HEADER) Util.Warn(`Failed to create array. Remaining bytes: ${this.length}`);
       return null;
     }
   }
@@ -166,6 +168,8 @@ class Message {
    * @param {ErArray} array - Destination array */
   fillArray(array) {
     const count = Math.min(this.length, array.neededBytes);
+    if (count === 0) return;
+
     const bytes = this.popBytes(count);
     array.addBytes(bytes);
   }
@@ -263,6 +267,10 @@ class Serial {
 
   serialize(addrs) {
     if (addrs.length === 0) return;
+    Util.Info(`Requesting ${addrs.length} cells `);
+    this.numRequested = addrs.length;
+    this.numReceived  = 0;
+    this.numMessages  = 0;
 
     // we could construct a whole ErArray and send it, but why bother copying the data over ?
     // for now we just compute the header upfront and send each address on its own
@@ -270,13 +278,22 @@ class Serial {
     // It would need addr.toBytes(into ErArray, offset)
 
     const numBytes = addrs.length * Address.BUFFER_SIZE;
-    const arrHeader = new DataView(new ArrayBuffer(numBytes));
-    // arrHeader.
+    const arrHeader = new DataView(new ArrayBuffer(ErArray.ARRAY_HEADER));
+    let offset = 0;
+    arrHeader.setInt64LE(offset, numBytes); offset += 8;  // vSize
+/*  arrHeader.setInt64LE(offset, 0);    */  offset += 8;  // cSize (zero anyway)
+    arrHeader.setUint8(offset, NETWORK.MODE.QUERY);
 
-
+    this.socket.send(arrHeader.buffer);
+    for (let i = 0, l = addrs.length; i < l; ++i) {
+      this.socket.send(addrs[i].toBytes());
+    }
+    Util.Info(`Buffered amount: ${this.socket.bufferedAmount}`);
   }
 
   deserialize(newMsgEvt) {
+    this.numMessages += 1;
+
     const msg = new Message(newMsgEvt.data);
     if (this.prevMsg && this.prevMsg.length > 0) {
       // having a previous message means that we couldn't construct an array from it
@@ -289,10 +306,14 @@ class Serial {
       headerBytes.set(this.prevMsg.popBytes(numInPrev), 0);
       headerBytes.set(         msg.popBytes(numInCurr), numInPrev);
       this.array = new ErArray(new DataView(headerBytes.buffer));
+      this.numReceived += 1;
     }
 
     if (this.array) msg.fillArray(this.array);    // leftover array, need to fill it
-    else            this.array = msg.popArray();  // no leftovers, start a new one
+    else {
+      this.array = msg.popArray();  // no leftovers, start a new one
+      this.numReceived += 1;
+    }
 
     // consume -- pop as many arrays as possible from the rest of the message
     while (this.array && this.array.isFull) {
