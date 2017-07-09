@@ -25,10 +25,9 @@ import OrbitControls from '../lib/OrbitControls';
 
 const UNCONDITIONAL_SCALE_EXPANSION = 3;
 
-export default function Model(canvas, autoFill) {
+export default function Model(canvas, autoFill = false) {
   // --- INITIALISATION -----------------------------------------------------------------------------------------------
-  this.autoFill = autoFill || false;
-
+  this.autoFill = autoFill;
   // TODO set size from parameters
   this.viewWidth = 800;
   this.viewHeight = 640;
@@ -107,9 +106,9 @@ export default function Model(canvas, autoFill) {
   /** Exposed function to "jump" to the given coordinates (cartesian)
    * @param {!number[]} coords - The [x, y, z] in absolute values. If not given, sets to default view
    * @param {!number[]} [lookAtTarget=[0,0,0]] - The [x, y, z] in absolute values of a point to look at */
-  this.setView = (coords, lookAtTarget) => {
+  this.setView = (coords, lookAtTarget = [0, 0, 0]) => {
     camera.position.set(...coords);
-    camera.lookAt(lookAtTarget || [0,0,0]);
+    camera.lookAt(lookAtTarget);
     // no need to update the controls
     update();
   };
@@ -134,7 +133,7 @@ export default function Model(canvas, autoFill) {
 
   const cache = {};       // cache[addr] = CellObject when the cell is available and rendered
   const toQuery = [];     // list of generated addrs
-  const getViewableAddrs = (addr, scale) => {
+  const getViewableAddrs = (addr, scale = 0) => {
     // create new slot
     addr.digits.push(0);
     if (addr.size !== scale + 1) {
@@ -199,7 +198,7 @@ export default function Model(canvas, autoFill) {
     // TODO: adjust controls params
 
     if (this.autoFill) {
-      getViewableAddrs(getSeedAddr(), 0);
+      getViewableAddrs(getSeedAddr());
       Serial.serialize(toQuery);
     }
   };

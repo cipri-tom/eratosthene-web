@@ -195,13 +195,13 @@ class Message {
   }
 
   /** Extracts the next `count` bytes from this message (or up to `this.length`, whichever is shorter).
-   * @param {number} count - How many bytes to extract
+   * @param {number} [count=this.length] - How many bytes to extract
    * @return {Uint8Array} - The extracted bytes */
-  popBytes(count) {
-    const length  = count || this.length;
-    if (length > this.length) throw new Error('Cannot pop more bytes than existing');
-    const arr = new Uint8Array(this.dv.buffer, this.offset, length);
-    this.offset += length;
+  popBytes(count = this.length) {
+    // TODO test the new default argument
+    if (count > this.length) throw new Error('Cannot pop more bytes than existing');
+    const arr = new Uint8Array(this.dv.buffer, this.offset, count);
+    this.offset += count;
     return arr;
   }
 
