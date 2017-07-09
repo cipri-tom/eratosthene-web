@@ -41,8 +41,7 @@ class ErArray {
    * @throws {TypeError} when first parameter is not a DataView
    * @throws {Error} when the indicated bytes do not form a valid header
    */
-  constructor(dv, offset) {
-    offset = offset || 0;
+  constructor(dv, offset = 0) {
     if (!(dv instanceof DataView)) throw new TypeError('Invalid parameter type for ErArray constructor')
 
     if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new Error('Cannot build ErArray: incomplete header');
@@ -50,56 +49,99 @@ class ErArray {
     /** The compressed size of the array == the number of bytes coming on the network after the header
      * @type {number} */
     this.cLength = dv.getUint64LE(offset);
-
-    /** How many bytes have been filled. Initially `0`, up to {@link ErArray#cLength}
-     * @type {number} */
-    this.cFilled = 0;
-
     /** Actual array length, after decompression
      * @type {number} */
     this.length  = dv.getUint64LE(offset + 8);
 
-    /** The bytes of the compressed array. Released after decompression
-     * @private */
-    this.cBytes = null;
+    /** How many bytes have been **received**. Initially `0`, up to {@link ErArray#cLength}
+     * @type {number} */
+    this.numReceived = 0;
+    /** How many bytes have been **decoded**. Initially `0`, up to {@link ErArray#length}
+     * @type {number} */
+    this.numDecoded = 0;
+
+    /** The bytes of this array. This is completed incrementally while receiving the array
+     * Remains `null` if `this.length === 0`. */
+    this.bytesDv = this.length > 0 ? new DataView(new ArrayBuffer(this.length)) : null;
   }
 
   /** How many bytes still need to be received into this array
    * @type {number} */
-  get neededBytes() { return this.cLength - this.cFilled; }
+  get neededBytes() { return this.cLength - this.numReceived; }
 
   /** Indicates that all bytes have been received
    * @type {boolean} */
-  get isFull() { return this.cFilled === this.cLength; }
+  get isFull() { return this.numReceived === this.cLength; }
 
-  /** Appends the given bytes to this array and decompresses it if it becomes full.
+  /** Appends and possibly decompresses the given bytes into this array.
+   * NOTE: We know all incoming arrays are compressed or empty
    * @param {Uint8Array} bytes - the bytes to add to this array */
   addBytes(bytes) {
     if (this.isFull) throw new Error('Array already full');
-    if (bytes.byteLength === this.cLength) {
-      // the whole array fit in bytes, we can decompress directly without copying
-      this.decompress(bytes);
-      this.cFilled = this.cLength;  // it is full
-      return;
+
+    let readOffset = 0;
+    // setup bootstrap -- the first POINT is unchanged
+    if (this.numReceived < ErArray.DATA_POINT_SIZE) {
+      const count = Math.min(bytes.byteLength, ErArray.DATA_POINT_SIZE - this.numReceived);
+      for (let i = 0; i < count; ++i) {
+        this.bytesDv.setUint8(this.numDecoded + i, bytes[i]);
+      }
+      this.numReceived += count;
+      this.numDecoded  += count;
+      readOffset += count;
     }
 
-    if (!this.cBytes) this.cBytes = new Uint8Array(this.cLength);
-    this.cBytes.set(bytes, this.cFilled);
-    this.cFilled += bytes.byteLength;
-
-    if (this.isFull) this.decompress(this.cBytes);
+    if (readOffset < bytes.byteLength) {
+      this.decompress(bytes, readOffset);
+    }
   }
 
-  decompress(bytes) {
-    // TODO
-    this.bytes = bytes;
+  decompress(bytes, readOffset = 0) {
+    const readDv  = new DataView(bytes);
+    this.numReceived += bytes.byteLength - readOffset;
+
+    while (readOffset < readDv.byteLength) {
+      // read the descriptor for the next POINT -- note we read 4 bytes, but we'll only use 3
+      const desc = readDv.getUint32LE(readOffset);
+      readOffset += ErArray.DATA_DESCR_SIZE;
+
+      // read the pose for the next POINT
+      let mask = 0x1;
+      for (let numWritten = 0; numWritten < ErArray.DATA_POSES_SIZE; ++numWritten) {
+        if (desc & mask !== 0) {
+          // it is different, take it from the source
+          this.bytesDv.setUint8(this.numDecoded, readDv.getUint8(readOffset));
+          readOffset += 1;
+        } else {
+          // same as before, take it from previous POINT
+          this.bytesDv.setUint8(this.numDecoded, this.numDecoded - ErArray.DATA_POINT_SIZE);
+        }
+
+        this.numDecoded += 1;
+        mask <<= 1;
+      }
+
+      // read the data for next point
+      this.bytesDv.setUint8(this.numDecoded++, readDv.getUint8(readOffset++));
+      this.bytesDv.setUint8(this.numDecoded++, readDv.getUint8(readOffset++));
+      this.bytesDv.setUint8(this.numDecoded++, readDv.getUint8(readOffset++));
+    }
+
+    // sanity check
+    if (this.numReceived === this.cLength && this.numDecoded !== this.length) {
+      throw new Error('Bug in decompression');
+    }
   }
 }
 
 ErArray.ARRAY_HEADER_SIZES = 2 * 8; // 2 * uint64 (vsize, csize)
-ErArray.ARRAY_HEADER_MODE = 1;     // uint8 for mode
+ErArray.ARRAY_HEADER_MODE = 1;      // uint8 for mode
 /** How much space the header takes */
 ErArray.ARRAY_HEADER = ErArray.ARRAY_HEADER_SIZES + ErArray.ARRAY_HEADER_MODE;
+
+ErArray.DATA_POSES_SIZE = 3 * 8;                            //    pose: 3 * float64
+ErArray.DATA_POINT_SIZE = ErArray.DATA_POSES_SIZE + 3 * 1;  // +colour: 3 * uint8
+ErArray.DATA_DESCR_SIZE = 3;  // 3 bytes -> 24 bits -> indicates
 
 
 /** constants for network */
