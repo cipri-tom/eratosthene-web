@@ -44,7 +44,7 @@ class ErArray {
   constructor(dv, offset = 0) {
     if (!(dv instanceof DataView)) throw new TypeError('Invalid parameter type for ErArray constructor')
 
-    if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new Error('Cannot build ErArray: incomplete header');
+    if (dv.byteLength - offset < ErArray.ARRAY_HEADER) throw new RangeError('Cannot build ErArray: incomplete header');
 
     /** The compressed size of the array == the number of bytes coming on the network after the header
      * @type {number} */
@@ -53,16 +53,12 @@ class ErArray {
      * @type {number} */
     this.length  = dv.getUint64LE(offset + 8);
 
+    this.cBytes = this.cLength > 0 ? new Uint8Array(this.cLength) : null;
+    this.rBytes = this.length  > 0 ? new Uint8Array(this.length)  : null;
+
     /** How many bytes have been **received**. Initially `0`, up to {@link ErArray#cLength}
      * @type {number} */
     this.numReceived = 0;
-    /** How many bytes have been **decoded**. Initially `0`, up to {@link ErArray#length}
-     * @type {number} */
-    this.numDecoded = 0;
-
-    /** The bytes of this array. This is completed incrementally while receiving the array
-     * Remains `null` if `this.length === 0`. */
-    this.bytesDv = this.length > 0 ? new DataView(new ArrayBuffer(this.length)) : null;
   }
 
   /** How many bytes still need to be received into this array
@@ -79,26 +75,22 @@ class ErArray {
   addBytes(bytes) {
     if (this.isFull) throw new Error('Array already full');
 
-    let readOffset = 0;
-    // setup bootstrap -- the first POINT is unchanged
-    if (this.numReceived < ErArray.DATA_POINT_SIZE) {
-      const count = Math.min(bytes.byteLength, ErArray.DATA_POINT_SIZE - this.numReceived);
-      for (let i = 0; i < count; ++i) {
-        this.bytesDv.setUint8(this.numDecoded + i, bytes[i]);
-      }
-      this.numReceived += count;
-      this.numDecoded  += count;
-      readOffset += count;
-    }
+    this.cBytes.set(bytes, this.numReceived);
+    this.numReceived += bytes.byteLength;
 
-    if (readOffset < bytes.byteLength) {
-      this.decompress(bytes, readOffset);
+    if (this.isFull) {
+      this.decompress();
     }
   }
 
-  decompress(bytes, readOffset = 0) {
-    const readDv  = new DataView(bytes);
-    this.numReceived += bytes.byteLength - readOffset;
+  decompress() {
+    // bootstrap -- the first point is unmodified
+    this.rBytes.set(new Uint8Array(this.cBytes.buffer, 0, ErArray.DATA_POINT_SIZE));
+
+    const readDv  = new DataView(this.cBytes.buffer);
+    const writeDv = new DataView(this.rBytes.buffer);
+    let readOffset  = ErArray.DATA_POINT_SIZE;
+    let writeOffset = ErArray.DATA_POINT_SIZE;
 
     while (readOffset < readDv.byteLength) {
       // read the descriptor for the next POINT -- note we read 4 bytes, but we'll only use 3
@@ -107,30 +99,30 @@ class ErArray {
 
       // read the pose for the next POINT
       let mask = 0x1;
-      for (let numWritten = 0; numWritten < ErArray.DATA_POSES_SIZE; ++numWritten) {
-        if (desc & mask !== 0) {
+      for (let numWritten = 0; numWritten < ErArray.DATA_POSES_SIZE; ++numWritten, ++writeOffset, mask <<= 1) {
+        if ((desc & mask) !== 0) {
           // it is different, take it from the source
-          this.bytesDv.setUint8(this.numDecoded, readDv.getUint8(readOffset));
+          writeDv.setUint8(writeOffset, readDv.getUint8(readOffset));
           readOffset += 1;
         } else {
-          // same as before, take it from previous POINT
-          this.bytesDv.setUint8(this.numDecoded, this.numDecoded - ErArray.DATA_POINT_SIZE);
+          // it is same as previous point, take it from there
+          writeDv.setUint8(writeOffset, writeOffset - ErArray.DATA_POINT_SIZE);
         }
-
-        this.numDecoded += 1;
-        mask <<= 1;
       }
 
       // read the data for next point
-      this.bytesDv.setUint8(this.numDecoded++, readDv.getUint8(readOffset++));
-      this.bytesDv.setUint8(this.numDecoded++, readDv.getUint8(readOffset++));
-      this.bytesDv.setUint8(this.numDecoded++, readDv.getUint8(readOffset++));
+      writeDv.setUint8(writeOffset++, readDv.getUint8(readOffset++));
+      writeDv.setUint8(writeOffset++, readDv.getUint8(readOffset++));
+      writeDv.setUint8(writeOffset++, readDv.getUint8(readOffset++));
     }
 
     // sanity check
-    if (this.numReceived === this.cLength && this.numDecoded !== this.length) {
+    if (writeOffset !== this.length || readOffset !== this.cLength) {
       throw new Error('Bug in decompression');
     }
+
+    // free memory
+    this.cBytes = null;
   }
 }
 
@@ -188,9 +180,15 @@ class Message {
 
       this.fillArray(arr);
       return arr;
-    } catch (err) {  // array creation failed
-      if (this.length >= ErArray.ARRAY_HEADER) Util.Warn(`Failed to create array. Remaining bytes: ${this.length}`);
-      return null;
+    } catch (err) {
+      // Util.Error(err);
+      // array creation failed
+      if (err instanceof RangeError) {
+        Util.Warn(`Failed to create array. Remaining bytes: ${this.length}`);
+        return null;
+      }
+      // other errors:
+      throw err;
     }
   }
 
@@ -299,7 +297,16 @@ class Serial {
         }
 
         // all is well, setup the next messages
-        socket.onmessage = this.deserialize.bind(this);
+        // socket.onmessage = this.deserialize.bind(this);
+        socket.onmessage = (futureMsg) => {
+          // in dev mode, disable the callback as soon as there is some error
+          try {
+            this.deserialize(futureMsg);
+          } catch (err) {
+            this.socket.onmessage = null;
+            throw err;
+          }
+        };
         this.socket = socket;
 
         resolve({ spaceParam: spaceL, timeParam: timeL });
@@ -341,6 +348,7 @@ class Serial {
       // having a previous message means that we couldn't construct an array from it
       // because it didn't contain the whole array header
       if (this.array) throw new Error('Cannot have both a prevMsg and a prevArray');
+      if (this.prevMsg.length > ErArray.ARRAY_HEADER) throw new Error('Entire array header leftover');
 
       const headerBytes = new Uint8Array(ErArray.ARRAY_HEADER);
       const numInPrev = this.prevMsg.length;
