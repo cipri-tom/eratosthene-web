@@ -106,7 +106,7 @@ class ErArray {
           readOffset += 1;
         } else {
           // it is same as previous point, take it from there
-          writeDv.setUint8(writeOffset, writeOffset - ErArray.DATA_POINT_SIZE);
+          writeDv.setUint8(writeOffset, writeDv.getUint8(writeOffset - ErArray.DATA_POINT_SIZE));
         }
       }
 
@@ -315,18 +315,18 @@ class Serial {
   }
 
   serialize(addrs) {
-    if (addrs.length === 0) return;
-    Util.Info(`Requesting ${addrs.length} cells `);
-    this.numRequested = addrs.length;
+    const count = addrs.getLength();
+    if (count === 0) return;
+    Util.Info(`Requesting ${count} cells `);
+    this.numRequested = count;
     this.numReceived  = 0;
     this.numMessages  = 0;
 
     // we could construct a whole ErArray and send it, but why bother copying the data over ?
-    // for now we just compute the header upfront and send each address on its own
-    // TODO: change with the above because it would possible cause less network fragmentation.
-    // It would need addr.toBytes(into ErArray, offset)
+    // for now we just compute the header upfront and send each address on its own because the
+    // sending doesn't happen before this function quits (i.e. at the end socket.bufferedAmount > 0)
 
-    const numBytes = addrs.length * Address.BUFFER_SIZE;
+    const numBytes = count * Address.BUFFER_SIZE;
     const arrHeader = new DataView(new ArrayBuffer(ErArray.ARRAY_HEADER));
     let offset = 0;
     arrHeader.setInt64LE(offset, numBytes); offset += 8;  // vSize
@@ -334,8 +334,10 @@ class Serial {
     arrHeader.setUint8(offset, NETWORK.MODE.QUERY);
 
     this.socket.send(arrHeader.buffer);
-    for (let i = 0, l = addrs.length; i < l; ++i) {
-      this.socket.send(addrs[i].toBytes());
+
+    const addrsArr = addrs.asArray();
+    for (let i = 0; i < count; ++i) {
+      this.socket.send(addrsArr[i].toBytes());
     }
     Util.Info(`Buffered amount: ${this.socket.bufferedAmount}`);
   }
