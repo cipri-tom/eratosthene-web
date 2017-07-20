@@ -7,16 +7,6 @@
     <title>Eratosthene Prototype Web client</title>
     <script type="text/javascript" src="lib/util.js"></script>
     <script type="text/javascript" src="lib/webutil.js"></script>
-    <!--<script type="text/javascript" src="lib/dat.gui.min.js"></script>-->
-    <!--<script type="text/javascript" src="lib/three.min.js"></script>-->
-    <!--<script type="text/javascript" src="lib/TrackballControls.js"></script>-->
-    <!--<script type="text/javascript" src="lib/OrbitControls.js"></script>-->
-
-    <!--<script type="text/javascript" src="/serial.js"></script>-->
-    <!--<script type="text/javascript" src="/address.js"></script>-->
-    <!--<script type="text/javascript" src="/cell.js"></script>-->
-    <!--<script type="text/javascript" src="/model.js"></script>-->
-    <!--<script type="text/javascript" src="/client.js"></script>-->
 
     <script type="text/javascript" src="build/eratosthene.js"></script>
     <script type="text/javascript">
@@ -29,61 +19,6 @@
 <body>
     <canvas id="le_canvas"></canvas>
     <br/>
-    <input type="button" value="Render" onclick="render()">
-    <input type="button" value="Fill"   onclick="model.fill()">
     <input type="checkbox" id="autoFill" checked>Fill on change</input>
-    <div>
-        <h2>Big tiles: </h2>
-        <input type="text" id="big1" value="/950486422/1220011/1" autofocus>
-        <input type="button" value="Query" onclick="query(getElementById('big1').value)">
-        <br/>
-        <input type="text" id="big2" value="/950486422/1220011/8">
-        <input type="button" value="Query" onclick="query(getElementById('big2').value)">
-        <br/>
-        <input type="text" id="big3" value="/950486422/1220100/8">
-        <input type="button" value="Query" onclick="query(getElementById('big3').value)">
-    </div>
-    <div style="float: left; margin-right: 15px">
-        <h2>Small 1(Geneva 1850): </h2>
-        <input type="text"   value="/-3773779200/1220010023433132434/8" id="geneva_1850_10"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_10').value)" /><br/>
-        <input type="text"   value="/-3773779200/1220010023433132435/8" id="geneva_1850_11"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_11').value)" /><br/>
-        <input type="text"   value="/-3773779200/1220010023433132436/8" id="geneva_1850_12"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_12').value)" /><br/>
-        <input type="text"   value="/-3773779200/1220010023433132437/8" id="geneva_1850_13"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_13').value)" /><br/>
-        <input type="text"   value="/-3773779200/1220010023433132424/8" id="geneva_1850_14"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_14').value)" /><br/>
-        <input type="text"   value="/-3773779200/1220010023433132425/8" id="geneva_1850_15"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_15').value)" /><br/>
-        <input type="text"   value="/-3773779200/1220010023433132426/8" id="geneva_1850_16"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_16').value)" /><br/>
-        <input type="text"   value="/-3773779200/1220010023433132427/8" id="geneva_1850_17"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_17').value)" /><br/>
-    </div>
-    <div>
-        <h2>Small 2(Geneva 1850): </h2>
-        <input type="text"   value="/-3773779200/12200100234331324344/8" id="geneva_1850_20"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_10').value)" /><br/>
-        <input type="text"   value="/-3773779200/12200100234331324345/8" id="geneva_1850_21"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_11').value)" /><br/>
-        <input type="text"   value="/-3773779200/12200100234331324346/8" id="geneva_1850_22"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_12').value)" /><br/>
-        <input type="text"   value="/-3773779200/12200100234331324347/8" id="geneva_1850_23"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_13').value)" /><br/>
-        <input type="text"   value="/-3773779200/12200100234331324364/8" id="geneva_1850_24"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_14').value)" /><br/>
-        <input type="text"   value="/-3773779200/12200100234331324365/8" id="geneva_1850_25"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_15').value)" /><br/>
-        <input type="text"   value="/-3773779200/12200100234331324366/8" id="geneva_1850_26"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_16').value)" /><br/>
-        <input type="text"   value="/-3773779200/12200100234331324367/8" id="geneva_1850_27"  />
-        <input type="button" value="Query" onclick="query(getElementById('geneva_1850_17').value)" /><br/>
-    </div>
-    <br/>
-
-    Camera position:  <span id="camera_pos">0,0,0</span><br/>
-    Camera rotation:  <span id="camera_rot">0,0,0</span><br/>
 </body>
 </html>
