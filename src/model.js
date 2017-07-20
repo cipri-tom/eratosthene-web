@@ -1,14 +1,19 @@
 import { Address, EARTH, MAX_SCALE_VALUE } from './address';
 import * as Geo from './geodesy';
 import Serial from './serial';
+import Cell from './cell';
+import Queue from '../lib/Queue';
 import {
   WebGLRenderer, Scene, PerspectiveCamera,
   PointsMaterial, LineBasicMaterial,
-  EdgesGeometry, SphereBufferGeometry, LineSegments,
+  Points, EdgesGeometry, SphereBufferGeometry, LineSegments,
+  Vector3,
   VertexColors,
 }
   from '../lib/three.modules';
 import OrbitControls from '../lib/OrbitControls';
+
+/* global Util */
 
 // TODO BIG ONE: set all objects.matrixAutoUpdate to false. maybe also renderer.sortObjects
 
@@ -24,6 +29,7 @@ import OrbitControls from '../lib/OrbitControls';
 // [492664.38770525873, 4414496.867704961, 4577663.836644989]
 
 const UNCONDITIONAL_SCALE_EXPANSION = 3;
+const DISPLAY_MAX_CELLS = 1024;
 
 export default function Model(canvas, autoFill = false) {
   // --- INITIALISATION -----------------------------------------------------------------------------------------------
@@ -44,9 +50,9 @@ export default function Model(canvas, autoFill = false) {
 
   const camera = new PerspectiveCamera(75, this.viewWidth / this.viewHeight, 1, 1e8);   // TODO make these dynamic
   const defaultView = [695030.2193962388, 4992938.408158433, 4750739.144573923];        // above big tiles
-  camera.lookAt(scene.position);
+  this.camera = camera;
 
-  const material = new PointsMaterial({
+  const pointsMaterial = new PointsMaterial({
     // color: 0xFF0000,
     vertexColors: VertexColors,
     size: 1.0,
@@ -55,14 +61,14 @@ export default function Model(canvas, autoFill = false) {
 
   const controls = new OrbitControls(camera, canvas);
   Object.assign(controls, {
-    rotateSpeed: 0.0001,
-    zoomSpeed: 0.0001,
+    rotateSpeed: 0.1,
+    zoomSpeed: 0.1,
     panSpeed: 1.0,
     enableZoom: true,
     enablePan: true,
     enableKeys: false,
-    minDistance: EARTH.RADIUS - 10000,
-    maxDistance: EARTH.RADIUS + 10000,
+    minDistance: EARTH.ALTITUDE.MIN,
+    maxDistance: EARTH.ALTITUDE.MAX,
   });
   // this.controls = controls;
 
@@ -72,8 +78,9 @@ export default function Model(canvas, autoFill = false) {
     this.spaceParam = result.spaceParam;
     this.timeParam  = result.timeParam;
 
+    // at the time of the fulfillment of this promise these will be defined
     controls.addEventListener('end', update);
-    controls.addEventListener('change', this.render.bind(this));
+    controls.addEventListener('change', render);
 
     this.resetView();
 
@@ -108,7 +115,7 @@ export default function Model(canvas, autoFill = false) {
    * @param {!number[]} [lookAtTarget=[0,0,0]] - The [x, y, z] in absolute values of a point to look at */
   this.setView = (coords, lookAtTarget = [0, 0, 0]) => {
     camera.position.set(...coords);
-    camera.lookAt(lookAtTarget);
+    camera.lookAt(new Vector3(...lookAtTarget));
     // no need to update the controls
     update();
   };
@@ -118,7 +125,7 @@ export default function Model(canvas, autoFill = false) {
     this.setView(defaultView);
   };
 
-  this.render = () => {
+  const render = () => {
     renderer.render(scene, camera);
   };
 
@@ -131,8 +138,8 @@ export default function Model(canvas, autoFill = false) {
   }
 
 
-  const cache = {};       // cache[addr] = CellObject when the cell is available and rendered
-  const toQuery = [];     // list of generated addrs
+  const cache = {};             // cache[addr] = CellObject when the cell is available and rendered
+  const toQuery = new Queue();  // list of generated addrs
   const getViewableAddrs = (addr, scale = 0) => {
     // create new slot
     addr.digits.push(0);
@@ -148,6 +155,7 @@ export default function Model(canvas, autoFill = false) {
 
       // if we already know it is empty, skip all daughters
       if (cache[addr] === 0) {
+        addr.digits.pop();
         return;
       }
 
@@ -164,7 +172,7 @@ export default function Model(canvas, autoFill = false) {
         if (Geo.enoughDetail(dist, this.spaceParam, scale)) {
           if (!cache[addr]) {
             // TODO: check maximum number of new cells
-            toQuery.push(addr.clone());
+            toQuery.enqueue(addr.clone());
           }
 
         // otherwise expand it (if it can still be expanded)
@@ -180,8 +188,31 @@ export default function Model(canvas, autoFill = false) {
 
   let numReceived = 0;
   function receiveData(data) {
-    console.log(`Cell ${numReceived} received! Len: ${data.length}`);
-    numReceived++;
+    Util.Info(`Cell ${numReceived} received! Len: ${data.length}`);
+    numReceived += 1;
+
+    // save all empty cells
+    const addr = toQuery.dequeue();
+    if (data.length === 0) {
+      cache[addr] = 0;
+      return;
+    }
+
+    if (cache[addr]) throw new Error('Cannot receive cell that we already have');
+    cache[addr] = true;
+
+    // display this new data
+    const cell = new Cell(addr, data, pointsMaterial);
+    scene.add(cell);
+
+    // remove oldest cell
+    if (scene.children.length > DISPLAY_MAX_CELLS) {
+      const oldCell = scene.children[1]; // the 0'th child is the earth
+      oldCell.geometry.dispose();
+      cache[oldCell.addr] = false;
+      scene.remove(oldCell);  // TODO: possibly inefficient due to `splice` call
+    }
+    render();
   }
 
   const getSeedAddr = () => {
@@ -189,7 +220,7 @@ export default function Model(canvas, autoFill = false) {
     addr.mode  = this.timeMode;
     addr.time  = this.time.slice();
     return addr;
-  }
+  };
 
   // we need `var` here because we want this hoisted to the top, to be able to be referenced before using
   // and we don't want to use `function update` because of problems with referencing `this`
@@ -201,5 +232,6 @@ export default function Model(canvas, autoFill = false) {
       getViewableAddrs(getSeedAddr());
       Serial.serialize(toQuery);
     }
+    render();
   };
 }

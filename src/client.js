@@ -1,7 +1,5 @@
 import GUI from '../lib/dat.gui.module';
 import Model from './model';
-import Address from './address';
-import Serial from './serial';
 
 /* global WebUtil Cell */
 
@@ -20,40 +18,7 @@ export default class Client {
   }
 }
 
-function initCamera() {
-  // set some logging elements
-  cameraPos = document.getElementById('cameraPos');
-  cameraRot = document.getElementById('cameraRot');
-
-  cameraPos.textContent = camera.position.toArray().join('   ');
-  cameraRot.textContent = camera.rotation.toArray().join('   ');
-
-  return camera;
-}
-
-function init() {
-  render();
-}
-
-
-function query(addrStr) {
-  console.log(addrStr);
-  const cell = new Cell(addrStr);
-  cell.callback = update;  // FIXME really used before defined ? yes, but works because of function hoisting
-  cell.query();
-}
-
-function render() {
-  // console.log('render');
-  renderer.render(scene, camera);
-  cameraPos.textContent = camera.position.toArray().join('   ');
-  cameraRot.textContent = camera.rotation.toArray().join('   ');
-}
-
-function update(cell) {
-  const points = new THREE.Points(cell.get_geometry(), material_g);
-  scene.add(points);
-  render();
-}
-
-export { Address, Model, Serial };
+// for debugging, also export these:
+export { Model };
+export { Address } from './address';
+export Serial from './serial';

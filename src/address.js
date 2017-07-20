@@ -162,6 +162,9 @@ Object.defineProperties(Address.prototype, {
   },
 });
 
-const EARTH = { RADIUS: LE_ADDRESS_WGSA, RANGE_LON: LE_ADDRESS_RANL };
+const EARTH = {
+  RADIUS: LE_ADDRESS_WGSA,
+  ALTITUDE: { MIN: LE_ADDRESS_WGSA * 0.75, MAX: LE_ADDRESS_WGSA * 3.00 },  // ER_COMMON_ALL, ER_COMMON_ALU
+};
 export { EARTH, MAX_SCALE_VALUE  };
 export default Address;
