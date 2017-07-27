@@ -10,14 +10,14 @@ DataView.prototype.getUint64LE = function dvGetUint64LE(offset) {
   const lo = this.getUint32(offset, true);
   const hi = this.getUint32(offset + 4, true);
   const result = hi * 4294967296.0 + lo;
-  if (result > Number.MAX_SAFE_INTEGER)
-    throw new Error('Cannot extract uint64 safely');
+  if (result > Number.MAX_SAFE_INTEGER) throw new Error('Cannot extract uint64 safely');
+
   return result;
 };
 
 DataView.prototype.setInt64LE = function dvSetInt64LE(offset, value) {
-  if (!Number.isSafeInteger(value))
-    throw new Error('Cannot set int64 safely');
+  value = Math.round(value);
+  if (!Number.isSafeInteger(value)) throw new Error('Cannot set int64 safely');
 
   let   hi = Math.floor(value / 4294967296.0);
   const lo = value - hi * 4294967296.0;

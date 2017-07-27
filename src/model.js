@@ -6,7 +6,7 @@ import Queue from '../lib/Queue';
 import {
   WebGLRenderer, Scene, PerspectiveCamera,
   PointsMaterial, LineBasicMaterial,
-  Points, EdgesGeometry, SphereBufferGeometry, LineSegments,
+  EdgesGeometry, SphereBufferGeometry, LineSegments,
   Vector3,
   VertexColors,
 }
@@ -31,15 +31,14 @@ import OrbitControls from '../lib/OrbitControls';
 const UNCONDITIONAL_SCALE_EXPANSION = 3;
 const DISPLAY_MAX_CELLS = 1024;
 
-export default function Model(canvas, autoFill = false) {
+export default function Model(canvas, times, autoFill = false) {
   // --- INITIALISATION -----------------------------------------------------------------------------------------------
   this.autoFill = autoFill;
+  this.times = times;
+
   // TODO set size from parameters
   this.viewWidth = 800;
   this.viewHeight = 640;
-
-  this.timeMode = 1;   // TODO: define a constant somewhere TIME_MODES (values and buttons, maybe)
-  this.time = [950486422, 0];
 
   const renderer = new WebGLRenderer({ canvas, logarithmicDepthBuffer: true });
   renderer.setSize(this.viewWidth, this.viewHeight);
@@ -79,33 +78,9 @@ export default function Model(canvas, autoFill = false) {
     this.timeParam  = result.timeParam;
 
     // at the time of the fulfillment of this promise these will be defined
-    controls.addEventListener('end', update);
     controls.addEventListener('change', render);
 
     this.resetView();
-
-    // const addrDv = new DataView(new ArrayBuffer(Address.BUFFER_SIZE + 17)); // array header
-    // let offset = 0;
-    // // write array header
-    // addrDv.setInt64LE(offset, Address.BUFFER_SIZE); offset += 8;
-    // addrDv.setInt64LE(offset, 0);                   offset += 8;
-    // addrDv.setUint8(offset, 0x03);                  offset += 1;
-    //
-    // // address times
-    // addrDv.setInt64LE(offset, -3773779200); offset += 8;  // t0
-    // addrDv.setInt64LE(offset, 0);           offset += 8;  // t1
-    //
-    // // address descriptor
-    // addrDv.setUint8(offset, 19);            offset += 1;  // size
-    // addrDv.setUint8(offset,  1);            offset += 1;  // mode
-    // addrDv.setUint8(offset,  8);            offset += 1;  // span
-    //
-    // // address digits
-    // const  = new Uint8Array(addrDv.buffer, offset, Address.DIGITS_SIZE);
-    // addrDigits.set([1, 2, 2, 0, 0, 1, 0, 0, 2, 3, 4, 3, 3, 1, 3, 2, 4, 3, 4]);
-    // console.log(new Uint8Array(addrDv.buffer));
-    //
-    // Serial.socket.send(addrDv.buffer);
   }).catch((error) => { console.log(error); });
 
   // --- PUBLIC METHODS -----------------------------------------------------------------------------------------------
@@ -117,7 +92,7 @@ export default function Model(canvas, autoFill = false) {
     camera.position.set(...coords);
     camera.lookAt(new Vector3(...lookAtTarget));
     // no need to update the controls
-    update();
+    this.update(false);
   };
 
   /** Sets the view to a default position */
@@ -217,21 +192,37 @@ export default function Model(canvas, autoFill = false) {
 
   const getSeedAddr = () => {
     const addr = new Address();
-    addr.mode  = this.timeMode;
-    addr.time  = this.time.slice();
+    addr.mode  = this.times.mode;
+    addr.time  = this.times.getTimes();
     return addr;
   };
 
-  // we need `var` here because we want this hoisted to the top, to be able to be referenced before using
-  // and we don't want to use `function update` because of problems with referencing `this`
-  // eslint-disable-next-line vars-on-top, no-var
-  var update = () => {
+  this.update = (modeOrTimeChanged) => {
     // TODO: adjust controls params
 
+    const seedAddr = getSeedAddr();
     if (this.autoFill) {
-      getViewableAddrs(getSeedAddr());
+      getViewableAddrs(seedAddr);
       Serial.serialize(toQuery);
     }
+    if (!modeOrTimeChanged) return;
+
+    // remove outdated cells
+    const toRemove = [];
+    const objects = scene.children;
+    for (let i = 1, l = objects.length; i < l; ++i) {  // start from 1 to skip earth !
+      if (!(objects[i] instanceof Cell)) throw new Error('Trying to remove invalid child');
+
+      const addr = objects[i].addr;
+      if (addr.mode !== seedAddr.mode ||
+          addr.mode !== 2 && addr.time[0] !== seedAddr.time[0] ||
+          addr.mode !== 1 && addr.time[1] !== seedAddr.time[1]) {
+        toRemove.push(objects[i]);
+      }
+    }
+    scene.remove(...toRemove);
     render();
   };
+  controls.addEventListener('end', this.update.bind(this, false));
+  this.times.callback = this.update.bind(this, true);
 }

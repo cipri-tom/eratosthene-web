@@ -5,18 +5,40 @@
     <meta content="utf-8" http-equiv="encoding">
 
     <title>Eratosthene Prototype Web client</title>
+
     <script type="text/javascript" src="lib/util.js"></script>
     <script type="text/javascript" src="lib/webutil.js"></script>
+
+    <script type="text/javascript" src="lib/vis/vis-timeline-graph2d.min.js"></script>
+    <link   type="text/css" rel="stylesheet" href="lib/vis/vis-timeline-graph2d.min.css" />
 
     <script type="text/javascript" src="build/eratosthene.js"></script>
     <script type="text/javascript">
         document.addEventListener("DOMContentLoaded", function launchApp() {
           window.client = new Client['default']('le_canvas');
-        })
+        });
     </script>
+    <style>
+        .time-1 { color: yellowgreen; }
+        .time-2 { color: blue; }
+        .vis-custom-time.time-1 { background-color: yellowgreen; }
+        .vis-custom-time.time-2 { background-color: blue; }
+
+        .inactive { color: darkgray; }
+        .vis-custom-time.inactive { background-color: darkgray; }
+    </style>
 
 </head>
 <body>
+    <div id="times" style="width: 100%">
+        <div id="timeline"></div>
+        <div id="timesText" style="text-align: center;">
+            <span id="time-1" class="time-1">Time 1</span>
+            <span id="mode">_UNSET_</span>
+            <span id="time-2" class="time-2 inactive">Time 2</span>
+        </div>
+    </div>
+    <div id="newTimes"></div>
     <canvas id="le_canvas"></canvas>
     <br/>
     <input type="checkbox" id="autoFill" checked>Fill on change</input>
