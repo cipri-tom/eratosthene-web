@@ -58,7 +58,7 @@ export default function Model(canvas, times, autoFill = false) {
     sizeAttenuation: false,
   });
 
-  const controls = new OrbitControls(camera, canvas);
+  const controls = new OrbitControls(camera, canvas, EARTH.RADIUS);
   Object.assign(controls, {
     rotateSpeed: 0.1,
     zoomSpeed: 0.1,
@@ -69,7 +69,7 @@ export default function Model(canvas, times, autoFill = false) {
     minDistance: EARTH.ALTITUDE.MIN,
     maxDistance: EARTH.ALTITUDE.MAX,
   });
-  // this.controls = controls;
+  this.controls = controls;
 
 
   Serial.connect(receiveData).then((result) => {
