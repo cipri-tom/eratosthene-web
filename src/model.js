@@ -168,12 +168,19 @@ export default function Model(canvas, times, autoFill = false) {
 
     // save all empty cells
     const addr = toQuery.dequeue();
+    if (!addr) throw new Error('Received more cells than asked for');
+
     if (data.length === 0) {
       cache[addr] = 0;
       return;
     }
 
-    if (cache[addr]) throw new Error('Cannot receive cell that we already have');
+    if (cache[addr]) {
+      // this happens when you generate an "update" call before the previous one was fully received
+      // TODO: use a better cache which allows to check the ones which are pending (toQuery)
+      Util.Info('Received existing cell');
+      return;
+    }
     cache[addr] = true;
 
     // display this new data

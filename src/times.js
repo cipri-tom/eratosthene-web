@@ -3,7 +3,7 @@
 
 const timelineOptions = {
   width: '100%',
-  height: '80px',
+  height: '50px',
   moment: date => vis.moment(date).utc(),
   snap: null,
   editable: false,
@@ -109,6 +109,6 @@ export default function Times(container, initialMode = 0) {
   };
   this.setMode(initialMode);
 
-  this.getTimes = () => [this.timeline.getCustomTime('time-1').getTime() / 1000,
-                         this.timeline.getCustomTime('time-2').getTime() / 1000]; // eslint-disable-line indent
+  this.getTimes = () => [Math.round(this.timeline.getCustomTime('time-1').getTime() / 1000),
+                         Math.round(this.timeline.getCustomTime('time-2').getTime() / 1000)]; // eslint-disable-line indent
 }

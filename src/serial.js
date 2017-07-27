@@ -304,6 +304,7 @@ class Serial {
           try {
             this.deserialize(futureMsg);
           } catch (err) {
+            // this is for alpha version only, so as to not lose an error amongst loads of received data
             this.socket.onmessage = null;
             throw err;
           }
