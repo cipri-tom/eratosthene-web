@@ -230,7 +230,8 @@ class Serial {
     this.dataReceiverCb = dataReceiverCb;
 
     return new Promise((resolve, reject) => {
-      const socket = new WebSocket(NETWORK.HOST, 'binary');
+      const host = WebUtil.getQueryVar('HOST', NETWORK.HOST);
+      const socket = new WebSocket(host, 'binary');
       socket.binaryType = 'arraybuffer';
 
       // TODO: check binary is supported
