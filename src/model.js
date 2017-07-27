@@ -37,8 +37,8 @@ export default function Model(canvas, times, autoFill = false) {
   this.times = times;
 
   // TODO set size from parameters
-  this.viewWidth = 800;
-  this.viewHeight = 640;
+  this.viewWidth  = canvas.width  = window.innerWidth;
+  this.viewHeight = canvas.height = window.innerHeight - 100;
 
   const renderer = new WebGLRenderer({ canvas, logarithmicDepthBuffer: true });
   renderer.setSize(this.viewWidth, this.viewHeight);
