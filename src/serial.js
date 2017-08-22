@@ -1,5 +1,5 @@
 import { Address } from './address';
-/* global Util */
+/* global Util WebUtil */
 
 /** Similar to the default getUint32 but it is always in little endian */
 DataView.prototype.getUint32LE = function dvGetUint32LE(offset) {
@@ -136,12 +136,14 @@ ErArray.DATA_POINT_SIZE = ErArray.DATA_POSES_SIZE + 3 * 1;  // +colour: 3 * uint
 ErArray.DATA_DESCR_SIZE = 3;  // 3 bytes -> 24 bits -> indicates
 
 
-/** constants for network */
+/** constants for networking */
 const NETWORK = {
-  SCHEMA: 'ws://',  // change to wss for secure protocol (needs TLS server)
-  IP: '127.0.0.1',
-  PORT: 11027,
-  get HOST() { return `${this.SCHEMA + this.IP}:${this.PORT}`; },
+  WS: {
+    get SCHEMA() { return 'ws'; },
+    get SERVER() { return WebUtil.getQueryVar('ws_server', window.location.hostname || 'localhost'); },
+    get PORT()   { return WebUtil.getQueryVar('ws_port'  , 10036); },
+    get URL()    { return `${this.SCHEMA}://${this.SERVER}:${this.PORT}`; },
+  },
 
   MODE: { AUTH: 0x01, RESILIATE: 0x02, QUERY: 0x03 },
 };
@@ -220,6 +222,25 @@ class Serial {
     this.socket = null;
     this.dataReceiverCb = null;
     this.prevMsg = null;
+
+    // try to cleanly close the connection
+    window.addEventListener('beforeunload', (evt) => {
+      if (!this.socket) {
+        evt.returnValue = undefined;
+        return undefined;
+      }
+
+      const arr = new Uint8Array(17);
+      arr[ErArray.ARRAY_HEADER_SIZES] = NETWORK.MODE.RESILIATE;
+      this.socket.send(arr.buffer);
+      this.socket.onclose = () => {};
+      this.socket.close();
+      this.socket = null;
+
+      // disable the dialog
+      evt.returnValue = undefined;
+      return undefined;
+    });
   }
 
   /** Establishes an authenticated connection to the server and sets up further message exchanges */
@@ -230,8 +251,7 @@ class Serial {
     this.dataReceiverCb = dataReceiverCb;
 
     return new Promise((resolve, reject) => {
-      const host = WebUtil.getQueryVar('HOST', NETWORK.HOST);
-      const socket = new WebSocket(host, 'binary');
+      const socket = new WebSocket(NETWORK.WS.URL, 'binary');
       socket.binaryType = 'arraybuffer';
 
       // TODO: check binary is supported
@@ -239,6 +259,8 @@ class Serial {
       socket.onerror = () => { Util.Error('Socket had an error'); };
       socket.onclose = () => {
         this.socket = null;
+        alert('The connection to the server failed. Please check your internet connection and refresh the page. ' +
+          'If the problem persists, contact the app developer.');
         throw new Error('Connection to server failed / closed');
       };
 

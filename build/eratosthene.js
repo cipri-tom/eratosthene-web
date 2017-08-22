@@ -44129,7 +44129,7 @@
 	  }
 	};
 
-	/* global Util */
+	/* global Util WebUtil */
 
 	/** Similar to the default getUint32 but it is always in little endian */
 	DataView.prototype.getUint32LE = function dvGetUint32LE(offset) {
@@ -44286,13 +44286,21 @@
 	ErArray.DATA_DESCR_SIZE = 3; // 3 bytes -> 24 bits -> indicates
 
 
-	/** constants for network */
+	/** constants for networking */
 	var NETWORK = {
-	  SCHEMA: 'ws://', // change to wss for secure protocol (needs TLS server)
-	  IP: '127.0.0.1',
-	  PORT: 11027,
-	  get HOST() {
-	    return this.SCHEMA + this.IP + ':' + this.PORT;
+	  WS: {
+	    get SCHEMA() {
+	      return 'ws';
+	    },
+	    get SERVER() {
+	      return WebUtil.getQueryVar('ws_server', window.location.hostname || 'localhost');
+	    },
+	    get PORT() {
+	      return WebUtil.getQueryVar('ws_port', 10036);
+	    },
+	    get URL() {
+	      return this.SCHEMA + '://' + this.SERVER + ':' + this.PORT;
+	    }
 	  },
 
 	  MODE: { AUTH: 0x01, RESILIATE: 0x02, QUERY: 0x03 }
@@ -44389,11 +44397,32 @@
 
 	var Serial = function () {
 	  function Serial() {
+	    var _this = this;
+
 	    classCallCheck(this, Serial);
 
 	    this.socket = null;
 	    this.dataReceiverCb = null;
 	    this.prevMsg = null;
+
+	    // try to cleanly close the connection
+	    window.addEventListener('beforeunload', function (evt) {
+	      if (!_this.socket) {
+	        evt.returnValue = undefined;
+	        return undefined;
+	      }
+
+	      var arr = new Uint8Array(17);
+	      arr[ErArray.ARRAY_HEADER_SIZES] = NETWORK.MODE.RESILIATE;
+	      _this.socket.send(arr.buffer);
+	      _this.socket.onclose = function () {};
+	      _this.socket.close();
+	      _this.socket = null;
+
+	      // disable the dialog
+	      evt.returnValue = undefined;
+	      return undefined;
+	    });
 	  }
 
 	  /** Establishes an authenticated connection to the server and sets up further message exchanges */
@@ -44402,7 +44431,7 @@
 	  createClass(Serial, [{
 	    key: 'connect',
 	    value: function connect(dataReceiverCb) {
-	      var _this = this;
+	      var _this2 = this;
 
 	      if (this.socket) throw new Error('Cannot connect twice');
 	      if (!dataReceiverCb) throw new Error('No data receiver given');
@@ -44410,8 +44439,7 @@
 	      this.dataReceiverCb = dataReceiverCb;
 
 	      return new Promise(function (resolve, reject) {
-	        var host = WebUtil.getQueryVar('HOST', NETWORK.HOST);
-	        var socket = new WebSocket(host, 'binary');
+	        var socket = new WebSocket(NETWORK.WS.URL, 'binary');
 	        socket.binaryType = 'arraybuffer';
 
 	        // TODO: check binary is supported
@@ -44420,7 +44448,8 @@
 	          Util.Error('Socket had an error');
 	        };
 	        socket.onclose = function () {
-	          _this.socket = null;
+	          _this2.socket = null;
+	          alert('The connection to the server failed. Please check your internet connection and refresh the page. ' + 'If the problem persists, contact the app developer.');
 	          throw new Error('Connection to server failed / closed');
 	        };
 
@@ -44485,14 +44514,14 @@
 	          socket.onmessage = function (futureMsg) {
 	            // in dev mode, disable the callback as soon as there is some error
 	            try {
-	              _this.deserialize(futureMsg);
+	              _this2.deserialize(futureMsg);
 	            } catch (err) {
 	              // this is for alpha version only, so as to not lose an error amongst loads of received data
-	              _this.socket.onmessage = null;
+	              _this2.socket.onmessage = null;
 	              throw err;
 	            }
 	          };
-	          _this.socket = socket;
+	          _this2.socket = socket;
 
 	          resolve({ spaceParam: spaceL, timeParam: timeL });
 	        };
