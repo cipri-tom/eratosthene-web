@@ -22,7 +22,7 @@ const timelineOptions = {
 
 const MODES_TEXT = ['_INITIALISED_', '< ONLY', 'ONLY >', '< OR >', '< AND >', '< XOR >'];
 
-const DEFAULT_TIMES = [950486422 * 1000, 1];  // 1 instead of 0 due to bug in Timeline
+const DEFAULT_TIMES = [950486422 * 1000, 1];  // 1 due to bug in Timeline https://github.com/almende/vis/issues/3299
 
 export default function Times(container, initialMode = 0) {
   this.callback = () => {};       // needs to be set by user
@@ -53,7 +53,7 @@ export default function Times(container, initialMode = 0) {
     } else throw new Error('Invalid ID when updating time.');
   };
   this.timeline.on('timechange', this.updateTime);
-  this.timeline.on('timechanged', () => { this.callback(); });
+  this.timeline.on('timechanged', this.callback);
 
   this.displayTime = (eventOrString) => {
     const m = vis.moment(eventOrString instanceof Event ? event.target.innerText : eventOrString);
@@ -96,13 +96,19 @@ export default function Times(container, initialMode = 0) {
         this.timeTxt1.classList.add('inactive');
         this.timeBar1.classList.add('inactive');
         break;
-      case 3: case 4: case 5:
+      case 3: case 4: case 5: {
+        // zoom out the timeline to show both times with 1 week left-right padding:
+        // TODO: change the padding size based on the difference between them
         const m1 = vis.moment(this.timeTxt1.innerText);
         const m2 = vis.moment(this.timeTxt2.innerText);
         if (m1.isBefore(m2)) this.timeline.setWindow(m1.subtract(1, 'w').valueOf(), m2.add(1, 'w').valueOf());
         else                 this.timeline.setWindow(m2.subtract(1, 'w').valueOf(), m1.add(1, 'w').valueOf());
-        this.container.querySelectorAll('.inactive').forEach((item) => { item.classList.remove('inactive'); });
+
+        // make both times active
+        this.container.querySelectorAll('.inactive').forEach(item => item.classList.remove('inactive'));
         break;
+      }
+
       default: throw new Error('Invalid mode for times');
     }
     this.callback();

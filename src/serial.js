@@ -224,11 +224,8 @@ class Serial {
     this.prevMsg = null;
 
     // try to cleanly close the connection
-    window.addEventListener('beforeunload', (evt) => {
-      if (!this.socket) {
-        evt.returnValue = undefined;
-        return undefined;
-      }
+    window.addEventListener('unload', () => {
+      if (!this.socket) return;
 
       const arr = new Uint8Array(17);
       arr[ErArray.ARRAY_HEADER_SIZES] = NETWORK.MODE.RESILIATE;
@@ -236,10 +233,6 @@ class Serial {
       this.socket.onclose = () => {};
       this.socket.close();
       this.socket = null;
-
-      // disable the dialog
-      evt.returnValue = undefined;
-      return undefined;
     });
   }
 

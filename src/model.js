@@ -221,6 +221,7 @@ export default function Model(canvas, times, autoFill = false) {
       if (!(objects[i] instanceof Cell)) throw new Error('Trying to remove invalid child');
 
       const addr = objects[i].addr;
+      // TODO: basically, the check is always true if we trust `modeOrTimeChanged` parameter
       if (addr.mode !== seedAddr.mode ||
           addr.mode !== 2 && addr.time[0] !== seedAddr.time[0] ||
           addr.mode !== 1 && addr.time[1] !== seedAddr.time[1]) {

@@ -44406,11 +44406,8 @@
 	    this.prevMsg = null;
 
 	    // try to cleanly close the connection
-	    window.addEventListener('beforeunload', function (evt) {
-	      if (!_this.socket) {
-	        evt.returnValue = undefined;
-	        return undefined;
-	      }
+	    window.addEventListener('unload', function () {
+	      if (!_this.socket) return;
 
 	      var arr = new Uint8Array(17);
 	      arr[ErArray.ARRAY_HEADER_SIZES] = NETWORK.MODE.RESILIATE;
@@ -44418,10 +44415,6 @@
 	      _this.socket.onclose = function () {};
 	      _this.socket.close();
 	      _this.socket = null;
-
-	      // disable the dialog
-	      evt.returnValue = undefined;
-	      return undefined;
 	    });
 	  }
 
@@ -44629,6 +44622,9 @@
 
 	  // inherit from Points
 	  Points.call(this, geometry, material);
+
+	  // disable auto update since this is static
+	  this.matrixAutoUpdate = false;
 
 	  // extract the geometry
 	  for (var currPt = 0; currPt < this.size; ++currPt) {
@@ -45549,6 +45545,7 @@
 	      if (!(objects[i] instanceof Cell)) throw new Error('Trying to remove invalid child');
 
 	      var addr = objects[i].addr;
+	      // TODO: basically, the check is always true if we trust `modeOrTimeChanged` parameter
 	      if (addr.mode !== seedAddr.mode || addr.mode !== 2 && addr.time[0] !== seedAddr.time[0] || addr.mode !== 1 && addr.time[1] !== seedAddr.time[1]) {
 	        toRemove.push(objects[i]);
 	      }
@@ -45586,7 +45583,7 @@
 
 	var MODES_TEXT = ['_INITIALISED_', '< ONLY', 'ONLY >', '< OR >', '< AND >', '< XOR >'];
 
-	var DEFAULT_TIMES = [950486422 * 1000, 1]; // 1 instead of 0 due to bug in Timeline
+	var DEFAULT_TIMES = [950486422 * 1000, 1]; // 1 due to bug in Timeline https://github.com/almende/vis/issues/3299
 
 	function Times(container) {
 	  var _this = this;
@@ -45621,9 +45618,7 @@
 	    } else throw new Error('Invalid ID when updating time.');
 	  };
 	  this.timeline.on('timechange', this.updateTime);
-	  this.timeline.on('timechanged', function () {
-	    _this.callback();
-	  });
+	  this.timeline.on('timechanged', this.callback);
 
 	  this.displayTime = function (eventOrString) {
 	    var m = vis.moment(eventOrString instanceof Event ? event.target.innerText : eventOrString);
@@ -45669,13 +45664,20 @@
 	        _this.timeBar1.classList.add('inactive');
 	        break;
 	      case 3:case 4:case 5:
-	        var m1 = vis.moment(_this.timeTxt1.innerText);
-	        var m2 = vis.moment(_this.timeTxt2.innerText);
-	        if (m1.isBefore(m2)) _this.timeline.setWindow(m1.subtract(1, 'w').valueOf(), m2.add(1, 'w').valueOf());else _this.timeline.setWindow(m2.subtract(1, 'w').valueOf(), m1.add(1, 'w').valueOf());
-	        _this.container.querySelectorAll('.inactive').forEach(function (item) {
-	          item.classList.remove('inactive');
-	        });
-	        break;
+	        {
+	          // zoom out the timeline to show both times with 1 week left-right padding:
+	          // TODO: change the padding size based on the difference between them
+	          var m1 = vis.moment(_this.timeTxt1.innerText);
+	          var m2 = vis.moment(_this.timeTxt2.innerText);
+	          if (m1.isBefore(m2)) _this.timeline.setWindow(m1.subtract(1, 'w').valueOf(), m2.add(1, 'w').valueOf());else _this.timeline.setWindow(m2.subtract(1, 'w').valueOf(), m1.add(1, 'w').valueOf());
+
+	          // make both times active
+	          _this.container.querySelectorAll('.inactive').forEach(function (item) {
+	            return item.classList.remove('inactive');
+	          });
+	          break;
+	        }
+
 	      default:
 	        throw new Error('Invalid mode for times');
 	    }

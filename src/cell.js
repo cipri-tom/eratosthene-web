@@ -33,6 +33,9 @@ function Cell(addr, array, material) {
   // inherit from Points
   Points.call(this, geometry, material);
 
+  // disable auto update since this is static
+  this.matrixAutoUpdate = false;
+
   // extract the geometry
   for (let currPt = 0; currPt < this.size; ++currPt) {
     // offsets are updated after each extraction; check if they are correct
